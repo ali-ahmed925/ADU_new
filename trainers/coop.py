@@ -260,7 +260,7 @@ class CoOp(TrainerX):
             self.model = nn.DataParallel(self.model)
 
     def forward_backward(self, batch):
-        image, label = self.parse_batch_train(batch)
+        image, label, domain = self.parse_batch_train(batch)
         
         prec = self.cfg.TRAINER.COOP.PREC
         if prec == "amp":
@@ -289,9 +289,12 @@ class CoOp(TrainerX):
     def parse_batch_train(self, batch):
         input = batch["img"]
         label = batch["label"]
+        domain = batch["domain"]
+        
         input = input.to(self.device)
         label = label.to(self.device)
-        return input, label
+        domain = domain.to(self.device)
+        return input, label, domain
 
     def load_model(self, directory, epoch=None):
         if not directory:
