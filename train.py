@@ -17,6 +17,8 @@ import datasets.sun397
 import datasets.caltech101
 import datasets.ucf101
 import datasets.imagenet
+import datasets.domainnet_df
+import datasets.office_home_df
 
 import datasets.imagenet_sketch
 import datasets.imagenetv2
