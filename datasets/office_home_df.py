@@ -1,8 +1,11 @@
+import glob
 import os.path as osp
-
+from dassl.utils import listdir_nohidden
 from dassl.data.datasets import DATASET_REGISTRY, Datum, DatasetBase
 from dassl.utils import mkdir_if_missing
 from dassl.data.datasets.dg import DigitsDG
+
+DOMAIN_NAMES = ["art", "clipart", "product", "real_world"]
 
 @DATASET_REGISTRY.register()
 class OfficeHomeDF(DatasetBase):
@@ -35,15 +38,54 @@ class OfficeHomeDF(DatasetBase):
         #     cfg.DATASET.SOURCE_DOMAINS, cfg.DATASET.TARGET_DOMAINS
         # )
         for domain in train_domains: #FIXME
-            train += DigitsDG.read_data(
+            train += read_data(
                 self.dataset_dir, [domain], "train"
             )
-            val += DigitsDG.read_data(
+            val += read_data(
                 self.dataset_dir, [domain], "val"
             )
         for domain in test_domains:
-            test += DigitsDG.read_data(
+            test += read_data(
                 self.dataset_dir, [domain], "all"
             )
 
         super().__init__(train_x=train, val=val, test=test)
+
+def read_data(dataset_dir, input_domains, split):
+
+        def _load_data_from_directory(directory):
+            folders = listdir_nohidden(directory)
+            folders.sort()
+            items_ = []
+
+            for label, folder in enumerate(folders):
+                impaths = glob.glob(osp.join(directory, folder, "*.jpg"))
+
+                for impath in impaths:
+                    items_.append((impath, label))
+
+            return items_
+
+        items = []
+
+        for dname in input_domains:
+            if split == "all":
+                train_dir = osp.join(dataset_dir, dname, "train")
+                impath_label_list = _load_data_from_directory(train_dir)
+                val_dir = osp.join(dataset_dir, dname, "val")
+                impath_label_list += _load_data_from_directory(val_dir)
+            else:
+                split_dir = osp.join(dataset_dir, dname, split)
+                impath_label_list = _load_data_from_directory(split_dir)
+
+            for impath, label in impath_label_list:
+                class_name = impath.split("/")[-2].lower()
+                item = Datum(
+                    impath=impath,
+                    label=label,
+                    domain=DOMAIN_NAMES.index(dname),
+                    classname=class_name
+                )
+                items.append(item)
+
+        return items
