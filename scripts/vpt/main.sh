@@ -1,21 +1,20 @@
 #!/bin/bash
-
+export CUDA_VISIBLE_DEVICES=$1
 #cd ../..
 
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
-TRAINER=CoCoOp
+TRAINER=VPT
 
-DATASET=office_home_df
-SEED=$1
+DATASET=$2
+SEED=$3
+CFG=$4
+# CFG=vit_b16_c2_ep50_batch128_8_depthvision1
+# SHOTS=16
 
-CFG=vit_b16_c4_ep10_batch1_ctxv1
-SHOTS=16
-
-
-DIR=output/${DATASET}/${TRAINER}/${CFG}_${SHOTS}shots/seed${SEED}
+DIR=output/${DATASET}/${TRAINER}/${CFG}/seed${SEED}
 if [ -d "$DIR" ]; then
-    echo "Results are available in ${DIR}. Skip this job"
+    echo "Results are available in ${DIR}."
 else
     echo "Run this job and save the output to ${DIR}"
 
@@ -26,5 +25,5 @@ else
     --dataset-config-file configs/datasets/${DATASET}.yaml \
     --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
     --output-dir ${DIR} \
-    DATASET.NUM_SHOTS ${SHOTS}
+    # TRAINER.${TRAINER}.PROMPT_DEPTH_VISION=${DEPTH_VISION} 
 fi
