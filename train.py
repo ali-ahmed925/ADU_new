@@ -31,6 +31,7 @@ import trainers.zsclip
 import trainers.maple
 import trainers.independentVL
 import trainers.promptsrc
+import trainers.vpt
 
 
 def print_args(args, cfg):
@@ -137,6 +138,13 @@ def extend_cfg(cfg):
     cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT = 9  # Max 12, minimum 0, for 0 it will act as shallow IVLP prompting(J=1)
     cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
 
+    # Config for only vision side prompting MaPLEの実装から流用
+    cfg.TRAINER.VPT = CN()
+    cfg.TRAINER.VPT.N_CTX_VISION = 8  # number of context vectors at the vision branch
+    cfg.TRAINER.VPT.CTX_INIT = "a photo of a"  # initialization words
+    cfg.TRAINER.VPT.PREC = "fp16"  # fp16, fp32, amp
+    cfg.TRAINER.VPT.PROMPT_DEPTH_VISION = 1  # if set to 1, will represent shallow vision prompting only
+    cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
 
 def setup_cfg(args):
     cfg = get_cfg_default()
