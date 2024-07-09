@@ -46,7 +46,7 @@ class OfficeHomeDF(DatasetBase):
             )
         for domain in test_domains:
             test += read_data(
-                self.dataset_dir, [domain], "all"
+                self.dataset_dir, [domain], "val"
             )
 
         super().__init__(train_x=train, val=val, test=test)
