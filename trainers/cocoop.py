@@ -15,6 +15,9 @@ from dassl.optim import build_optimizer, build_lr_scheduler
 from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 
+from utils.eval_acc import compute_acc_for_df
+from utils.loss_fn import EntropyMaximizationLoss
+
 _tokenizer = _Tokenizer()
 
 
@@ -191,8 +194,10 @@ class CustomCLIP(nn.Module):
             logits.append(l_i)
         logits = torch.stack(logits)
 
-        if self.prompt_learner.training:
-            return F.cross_entropy(logits, label)
+        # これのコメントアウトはoutputをCoOpと統一したかったから
+        # このクラス内で損失も計算している。。。
+        # if self.prompt_learner.training:
+        #     return F.cross_entropy(logits, label)
 
         return logits
 
@@ -243,13 +248,13 @@ class CoCoOp(TrainerX):
 
         # Note that multi-gpu training could be slow because CLIP's size is
         # big, which slows down the copy operation in DataParallel
-        device_count = torch.cuda.device_count()
+        device_count = 1
         if device_count > 1:
             print(f"Multiple GPUs detected (n_gpus={device_count}), use all of them!")
             self.model = nn.DataParallel(self.model)
 
     def forward_backward(self, batch):
-        image, label = self.parse_batch_train(batch)
+        image, label, domain = self.parse_batch_train(batch)
 
         model = self.model
         optim = self.optim
@@ -264,24 +269,77 @@ class CoCoOp(TrainerX):
             scaler.step(optim)
             scaler.update()
         else:
-            loss = model(image, label)
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
+            output = model(image, label)
+            is_DF = True #FIXME
+            if is_DF :
+                entropy_max_loss = EntropyMaximizationLoss()
+                domain_list = ["art", "clipart", "product", "real_world"]
+                prv_domain_list = ["clipart", "product", "real_world"]
+                del_domain_list = ["art"]
+                # domain_list = [
+                #             "clipart", 
+                #             "painting",
+                #             "real",
+                #             "sketch"
+                #             ]
+                # prv_domain_list = [
+                #             "painting",
+                #             "real",
+                #             "sketch"
+                #             ]
+                # del_domain_list = [
+                #             "clipart"
+                #             ]
 
-        loss_summary = {"loss": loss.item()}
-
+                # prv_domain_mask = torch.ones_like(domain, dtype=torch.bool)
+                # del_domain_mask = torch.ones_like(domain, dtype=torch.bool)
+                false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
+                
+                # for prv_domain in prv_domain_list:
+                prv_domain_index = [domain_list.index(prv_d) for prv_d in prv_domain_list if prv_d in domain_list]
+                prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+                # for del_domain in del_domain_list:
+                del_domain_index = [domain_list.index(del_d) for del_d in del_domain_list if del_d in domain_list]
+                del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+                
+                if torch.equal(false_check_tensor, prv_domain_mask):
+                    loss_prv = 0
+                else :
+                    loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
+                if torch.equal(false_check_tensor, del_domain_mask):
+                    loss_del = 0
+                else :
+                    loss_del = entropy_max_loss(output[del_domain_mask])
+                loss = loss_prv + 0.1 * loss_del
+            else :
+                loss = F.cross_entropy(output, label)
+            if not torch.isfinite(loss).all():
+                a = 0
+            self.model_backward_and_update(loss)
+            # optim.zero_grad()
+            # loss.backward()
+            # optim.step()
+        
+        # loss_summary = {"loss": loss.item()}
+        loss_summary = {
+            "loss": loss.item(),
+            "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
+            "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
+            # "acc": compute_accuracy(output, label)[0].item(),
+        }
+        acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, domain_list, device=self.device)
+        loss_summary.update(acc)
         if (self.batch_idx + 1) == self.num_batches:
             self.update_lr()
 
         return loss_summary
 
-    def parse_batch_train(self, batch):
-        input = batch["img"]
-        label = batch["label"]
-        input = input.to(self.device)
-        label = label.to(self.device)
-        return input, label
+    # def parse_batch_train(self, batch):
+    #     input = batch["img"]
+    #     label = batch["label"]
+    #     input = input.to(self.device)
+    #     label = label.to(self.device)
+    #     return input, label
 
     def load_model(self, directory, epoch=None):
         if not directory:
