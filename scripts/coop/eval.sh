@@ -3,17 +3,17 @@
 #cd ../..
 
 # custom config
-DATA=/path/to/datasets
+DATA="/nas/data/gotoyuta/Dataset/"
 TRAINER=CoOp
-SHOTS=16
-NCTX=16
+# SHOTS=16
+NCTX=8
 CSC=False
-CTP=end
+CTP=front
 
 DATASET=$1
 CFG=$2
 
-for SEED in 1 2 3
+for SEED in 1
 do
     python train.py \
     --root ${DATA} \
@@ -21,7 +21,7 @@ do
     --trainer ${TRAINER} \
     --dataset-config-file configs/datasets/${DATASET}.yaml \
     --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
-    --output-dir output/evaluation/${TRAINER}/${CFG}_${SHOTS}shots/nctx${NCTX}_csc${CSC}_ctp${CTP}/${DATASET}/seed${SEED} \
+    --output-dir output/evaluation/${TRAINER}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}/${DATASET}/seed${SEED} \
     --model-dir output/imagenet/${TRAINER}/${CFG}_${SHOTS}shots/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED} \
     --load-epoch 50 \
     --eval-only \
