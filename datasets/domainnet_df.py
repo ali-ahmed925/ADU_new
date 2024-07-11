@@ -54,15 +54,15 @@ class DomainNetDF(DatasetBase):
         # self.check_input_domains(
         #     cfg.DATASET.SOURCE_DOMAINS, cfg.DATASET.TARGET_DOMAINS
         # )
-        # train_domains = [
-        #     "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
-        # ]
+        train_domains = [
+            "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
+        ]
 
-        train_domains = ["clipart", "painting", "real", "sketch"]
-        test_domains = ["clipart", "painting", "real", "sketch"]
-        # test_domains = [
-        #     "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
-        # ]
+        # train_domains = ["clipart", "painting", "real", "sketch"]
+        # test_domains = ["clipart", "painting", "real", "sketch"]
+        test_domains = [
+            "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
+        ]
         train_x = self._read_data(train_domains, split="train")
         train_u = self._read_data(train_domains, split="train")
         val = self._read_data(test_domains, split="test")
