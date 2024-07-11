@@ -32,7 +32,7 @@ import trainers.maple
 import trainers.independentVL
 import trainers.promptsrc
 import trainers.vpt
-
+import trainers.clip_adapter
 
 def print_args(args, cfg):
     print("***************")
@@ -100,6 +100,8 @@ def extend_cfg(cfg):
     cfg.TRAINER.COOP.PREC = "fp16"  # fp16, fp32, amp
     cfg.TRAINER.COOP.CLASS_TOKEN_POSITION = "end"  # 'middle' or 'end' or 'front'
 
+    cfg.TRAINER.CLIP_Adapter = CN()
+
     cfg.TRAINER.COCOOP = CN()
     cfg.TRAINER.COCOOP.N_CTX = 16  # number of context vectors
     cfg.TRAINER.COCOOP.CTX_INIT = ""  # initialization words
@@ -145,6 +147,8 @@ def extend_cfg(cfg):
     cfg.TRAINER.VPT.PREC = "fp16"  # fp16, fp32, amp
     cfg.TRAINER.VPT.PROMPT_DEPTH_VISION = 1  # if set to 1, will represent shallow vision prompting only
     cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
+
+    # cfg.TRAINER.CLIP_Adapter = CN()
 
 def setup_cfg(args):
     cfg = get_cfg_default()
