@@ -204,6 +204,10 @@ class CustomCLIP(nn.Module):
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
+        # is_adapter = True
+        # self.is_adapter = is_adapter
+        # if self.is_adapter:
+        #     self.adapter = Adapter()
 
     def forward(self, image):
         image_features = self.image_encoder(image.type(self.dtype))
@@ -230,9 +234,20 @@ class CoOp(TrainerX):
     """
     def __init__(self, cfg):
         super().__init__(cfg)
-        self.domain_list = ["art", "clipart", "product", "real_world"]
-        self.prv_domain_list = ["clipart", "product", "real_world"]
-        self.del_domain_list = ["art"]
+        if cfg.DATASET.NAME == "OfficeHomeDF":
+            self.domain_list = ["art", "clipart", "product", "real_world"]
+            self.prv_domain_list = ["clipart", "product", "real_world"]
+            self.del_domain_list = ["art"]
+        elif cfg.DATASET.NAME == "DomainNetDF":
+            self.domain_list = [
+                "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
+            ]
+            self.prv_domain_list = [
+                "clipart", "infograph", "quickdraw", "real", "sketch"
+            ]
+            self.del_domain_list = [
+                "painting"
+            ]
 
     def check_cfg(self, cfg):
         assert cfg.TRAINER.COOP.PREC in ["fp16", "fp32", "amp"]
