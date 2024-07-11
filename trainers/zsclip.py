@@ -29,6 +29,7 @@ CUSTOM_TEMPLATES = {
     "ImageNetA": "a photo of a {}.",
     "ImageNetR": "a photo of a {}.",
     "OfficeHomeDF": "a photo of a {}.",
+    "DomainNetDF": "a photo of a {}"
 }
 
 
@@ -36,9 +37,23 @@ CUSTOM_TEMPLATES = {
 class ZeroshotCLIP(TrainerX):
     def __init__(self, cfg):
         super().__init__(cfg)
-        self.domain_list = ["art", "clipart", "product", "real_world"]
-        self.prv_domain_list = ["clipart", "product", "real_world"]
-        self.del_domain_list = ["art"]
+        # self.domain_list = ["art", "clipart", "product", "real_world"]
+        # self.prv_domain_list = ["clipart", "product", "real_world"]
+        # self.del_domain_list = ["art"]
+        if cfg.DATASET.NAME == "OfficeHomeDF":
+            self.domain_list = ["art", "clipart", "product", "real_world"]
+            self.prv_domain_list = ["clipart", "product", "real_world"]
+            self.del_domain_list = ["art"]
+        elif cfg.DATASET.NAME == "DomainNetDF":
+            self.domain_list = [
+                "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
+            ]
+            self.prv_domain_list = [
+                "clipart", "infograph", "quickdraw", "real", "sketch"
+            ]
+            self.del_domain_list = [
+                "painting"
+            ]
     def build_model(self):
         cfg = self.cfg
         classnames = self.dm.dataset.classnames
