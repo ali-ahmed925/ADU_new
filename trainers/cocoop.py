@@ -18,6 +18,8 @@ from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 from utils.eval_acc import compute_acc_for_df
 from utils.loss_fn import EntropyMaximizationLoss
 
+from engine.trainer import TrainerDF
+
 _tokenizer = _Tokenizer()
 
 
@@ -203,7 +205,7 @@ class CustomCLIP(nn.Module):
 
 
 @TRAINER_REGISTRY.register()
-class CoCoOp(TrainerX):
+class CoCoOp(TrainerDF):
     def check_cfg(self, cfg):
         assert cfg.TRAINER.COCOOP.PREC in ["fp16", "fp32", "amp"]
 
@@ -252,94 +254,6 @@ class CoCoOp(TrainerX):
         if device_count > 1:
             print(f"Multiple GPUs detected (n_gpus={device_count}), use all of them!")
             self.model = nn.DataParallel(self.model)
-
-    def forward_backward(self, batch):
-        image, label, domain = self.parse_batch_train(batch)
-
-        model = self.model
-        optim = self.optim
-        scaler = self.scaler
-
-        prec = self.cfg.TRAINER.COCOOP.PREC
-        if prec == "amp":
-            with autocast():
-                loss = model(image, label)
-            optim.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:
-            output = model(image, label)
-            is_DF = True #FIXME
-            if is_DF :
-                entropy_max_loss = EntropyMaximizationLoss()
-                domain_list = ["art", "clipart", "product", "real_world"]
-                prv_domain_list = ["clipart", "product", "real_world"]
-                del_domain_list = ["art"]
-                # domain_list = [
-                #             "clipart", 
-                #             "painting",
-                #             "real",
-                #             "sketch"
-                #             ]
-                # prv_domain_list = [
-                #             "painting",
-                #             "real",
-                #             "sketch"
-                #             ]
-                # del_domain_list = [
-                #             "clipart"
-                #             ]
-
-                # prv_domain_mask = torch.ones_like(domain, dtype=torch.bool)
-                # del_domain_mask = torch.ones_like(domain, dtype=torch.bool)
-                false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
-                
-                # for prv_domain in prv_domain_list:
-                prv_domain_index = [domain_list.index(prv_d) for prv_d in prv_domain_list if prv_d in domain_list]
-                prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
-                # for del_domain in del_domain_list:
-                del_domain_index = [domain_list.index(del_d) for del_d in del_domain_list if del_d in domain_list]
-                del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
-                
-                if torch.equal(false_check_tensor, prv_domain_mask):
-                    loss_prv = 0
-                else :
-                    loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
-                if torch.equal(false_check_tensor, del_domain_mask):
-                    loss_del = 0
-                else :
-                    loss_del = entropy_max_loss(output[del_domain_mask])
-                loss = loss_prv + 0.1 * loss_del
-            else :
-                loss = F.cross_entropy(output, label)
-            if not torch.isfinite(loss).all():
-                a = 0
-            self.model_backward_and_update(loss)
-            # optim.zero_grad()
-            # loss.backward()
-            # optim.step()
-        
-        # loss_summary = {"loss": loss.item()}
-        loss_summary = {
-            "loss": loss.item(),
-            "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
-            "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
-            # "acc": compute_accuracy(output, label)[0].item(),
-        }
-        acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, domain_list, device=self.device)
-        loss_summary.update(acc)
-        if (self.batch_idx + 1) == self.num_batches:
-            self.update_lr()
-
-        return loss_summary
-
-    # def parse_batch_train(self, batch):
-    #     input = batch["img"]
-    #     label = batch["label"]
-    #     input = input.to(self.device)
-    #     label = label.to(self.device)
-    #     return input, label
 
     def load_model(self, directory, epoch=None):
         if not directory:
