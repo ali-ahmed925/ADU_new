@@ -19,6 +19,7 @@ import datasets.ucf101
 import datasets.imagenet
 import datasets.domainnet_df
 import datasets.office_home_df
+import datasets.office_home_df_domain
 
 import datasets.imagenet_sketch
 import datasets.imagenetv2
@@ -33,6 +34,7 @@ import trainers.independentVL
 import trainers.promptsrc
 import trainers.vpt
 import trainers.clip_adapter
+import trainers.coop_domain_specific
 
 def print_args(args, cfg):
     print("***************")
@@ -148,6 +150,7 @@ def extend_cfg(cfg):
     cfg.TRAINER.VPT.PROMPT_DEPTH_VISION = 1  # if set to 1, will represent shallow vision prompting only
     cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
 
+    cfg.TRAINER.CoOpDomainSpecific = CN()
     # cfg.TRAINER.CLIP_Adapter = CN()
 
 def setup_cfg(args):
