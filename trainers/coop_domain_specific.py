@@ -24,6 +24,8 @@ import time
 from tqdm import tqdm
 from engine.trainer import TrainerDF
 
+from utils.data_augmentation import get_jigsaw_tensor
+
 _tokenizer = _Tokenizer()
 
 
@@ -227,12 +229,33 @@ class CustomCLIP(nn.Module):
 
 
 @TRAINER_REGISTRY.register()
-class CoOp(TrainerDF):
+class CoOpDomainSpecific(TrainerDF):
     """Context Optimization (CoOp).
 
     Learning to Prompt for Vision-Language Models
     https://arxiv.org/abs/2109.01134
     """
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        if cfg.DATASET.NAME == "OfficeHomeDF":
+            self.domain_list = ["art", "clipart", "product", "real_world"]
+            self.del_domain_list = ["clipart", "product", "real_world"]
+            self.prv_domain_list = ["art"]
+        elif cfg.DATASET.NAME == "OfficeHomeDFDomain":
+            self.domain_list = ["art", "clipart", "product", "real_world"]
+            self.del_domain_list = []
+            self.prv_domain_list = ["art", "clipart", "product", "real_world"]
+        elif cfg.DATASET.NAME == "DomainNetDF":
+            self.domain_list = [
+                "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
+            ]
+            self.prv_domain_list = [
+                "clipart", "infograph", "quickdraw", "real", "sketch"
+            ]
+            self.del_domain_list = [
+                "painting"
+            ]
+
     def check_cfg(self, cfg):
         assert cfg.TRAINER.COOP.PREC in ["fp16", "fp32", "amp"]
 
@@ -307,6 +330,114 @@ class CoOp(TrainerDF):
             # set strict=False
             self._models[name].load_state_dict(state_dict, strict=False)
 
+    def forward_backward(self, batch):
+        image, label, domain = self.parse_batch_train(batch)
+        image = get_jigsaw_tensor(image, 8, self.device)
+
+        prec = self.cfg.TRAINER.COOP.PREC
+        if prec == "amp":
+            with autocast():
+                output = self.model(image)
+                loss = F.cross_entropy(output, label)
+            self.optim.zero_grad()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optim)
+            self.scaler.update()
+        else:
+            output = self.model(image)
+            is_DF = True #FIXME
+            if is_DF :
+                entropy_max_loss = EntropyMaximizationLoss()
+                false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
+                
+                # for prv_domain in prv_domain_list:
+                prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+                prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+                # for del_domain in del_domain_list:
+                del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+                del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+                
+                if torch.equal(false_check_tensor, prv_domain_mask):
+                    loss_prv = 0
+                else :
+                    loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
+                if torch.equal(false_check_tensor, del_domain_mask):
+                    loss_del = 0
+                else :
+                    loss_del = entropy_max_loss(output[del_domain_mask])
+                loss = loss_prv + loss_del
+            else :
+                loss = F.cross_entropy(output, label)
+            self.model_backward_and_update(loss)
+        loss_summary = {
+            "loss": loss.item(),
+            "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
+            "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
+            "acc": compute_accuracy(output, label)[0].item(),
+        }
+        acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
+        loss_summary.update(acc)
+        if (self.batch_idx + 1) == self.num_batches:
+            self.update_lr()
+
+        return loss_summary
+    
+    @torch.no_grad()
+    def test(self, split=None):
+        """A generic testing pipeline."""
+        self.set_model_mode("eval")
+        self.evaluator.reset()
+
+        if split is None:
+            split = self.cfg.TEST.SPLIT
+
+        if split == "val" and self.val_loader is not None:
+            data_loader = self.val_loader
+        else:
+            split = "test"  # in case val_loader is None
+            data_loader = self.test_loader
+
+        print(f"Evaluate on the *{split}* set")
+        eval_dict = {}
+        for batch_idx, batch in enumerate(tqdm(data_loader)):
+            input, label, domain = self.parse_batch_test(batch)
+            output = self.model_inference(input)
+            self.evaluator.process(output, label)
+
+            # for prv_domain in prv_domain_list:
+            prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+            prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+            # for del_domain in del_domain_list:
+            del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+            del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+
+            eval_dict = compute_acc_for_df_eval(
+                eval_dict,
+                output,
+                label,
+                prv_domain_mask,
+                del_domain_mask,
+                domain,
+                self.domain_list,
+                self.device
+            ) 
+
+        results = self.evaluator.evaluate()
+        print("==========peservation or delete acc===============")
+        for name in ["prv"]:
+            acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
+            print(f"{name} : {acc:.2f}")
+        print("==============domain specific acc=================")
+        for domain_name in self.domain_list:
+            acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
+            print(f"{domain_name} : {acc:.2f}")
+        print("===================================================")
+
+        for k, v in results.items():
+            tag = f"{split}/{k}"
+            self.write_scalar(tag, v, self.epoch)
+
+        return list(results.values())[0]
 # @TRAINER_REGISTRY.register()
 # class CoOp(TrainerX):
 #     """Context Optimization (CoOp).
