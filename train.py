@@ -82,7 +82,7 @@ def reset_cfg(cfg, args):
         cfg.MODEL.HEAD.NAME = args.head
 
 
-def extend_cfg(cfg):
+def extend_cfg(cfg, args):
     """
     Add new config variables.
 
@@ -94,6 +94,10 @@ def extend_cfg(cfg):
         cfg.TRAINER.MY_MODEL.PARAM_C = False
     """
     from yacs.config import CfgNode as CN
+
+    if len(args.forget_domains) > 0:
+        cfg.DATASET.FORGETDOMAINS = args.forget_domains
+        # print(cfg.DATASET.FORGETDOMAINS)
 
     cfg.TRAINER.COOP = CN()
     cfg.TRAINER.COOP.N_CTX = 16  # number of context vectors
@@ -155,7 +159,7 @@ def extend_cfg(cfg):
 
 def setup_cfg(args):
     cfg = get_cfg_default()
-    extend_cfg(cfg)
+    extend_cfg(cfg, args)
 
     # 1. From the dataset config file
     if args.dataset_config_file:
@@ -253,6 +257,12 @@ if __name__ == "__main__":
         default=None,
         nargs=argparse.REMAINDER,
         help="modify config options using the command-line",
+    )
+    parser.add_argument(
+        "--forget_domains",
+        default=[],
+        nargs="*",
+        help="input forget domains like '--forget_domains domain1 domain2 ..' "
     )
     args = parser.parse_args()
     main(args)

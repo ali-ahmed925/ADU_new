@@ -30,8 +30,11 @@ class TrainerDF(SimpleTrainer):
         super().__init__(cfg)
         if cfg.DATASET.NAME == "OfficeHomeDF":
             self.domain_list = ["art", "clipart", "product", "real_world"]
-            self.prv_domain_list = ["clipart", "product", "real_world"]
-            self.del_domain_list = ["art"]
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
+            assert set(self.domain_list) | set(self.del_domain_list) == set(self.domain_list)
+
+            self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
+
         elif cfg.DATASET.NAME == "DomainNetDF":
             self.domain_list = [
                 "clipart", "infograph", "painting", "quickdraw", "real", "sketch"

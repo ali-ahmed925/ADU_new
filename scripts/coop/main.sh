@@ -1,21 +1,31 @@
 #!/bin/bash
 
 #cd ../..
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=$1
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
 TRAINER=CoOp
 
-DATASET=$1
-CFG=$2  # config file
-CTP=$3  # class token position (end or middle or front)
-NCTX=$4  # number of context tokens
+DATASET=$2 # ex.) office_home_df
+CFG=$3  # config file
+CTP=$4  # class token position (end or middle or front)
+NCTX=$5  # number of context tokens
 # SHOTS=$5  # number of shots (1, 2, 4, 8, 16)
-CSC=$5  # class-specific context (False or True)
+CSC=$6 # class-specific context (False or True)
 
-for SEED in 1
+# ROOT_DIR=$7 # 
+
+# 7番目以降の引数をアンダースコアでつなげる
+DOMAIN_LIST=("${@:7}")
+DOMAIN_SEC=$(IFS=-; echo "${@:7}")
+
+# DOMAIN_LIST の要素数をカウント
+DOMAIN_COUNT=$(echo "$DOMAIN_LIST" | wc -w)
+TODAY=$(date +"%Y%m%d")
+
+for SEED in 3
 do
-    DIR=output/${DATASET}/${TRAINER}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}
+    DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}/${TODAY}
     if [ -d "$DIR" ]; then
         echo "Results are available in ${DIR}. Skip this job"
     else
@@ -26,6 +36,7 @@ do
         --trainer ${TRAINER} \
         --dataset-config-file configs/datasets/${DATASET}.yaml \
         --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
+        --forget_domains "${DOMAIN_LIST[@]}" \
         --output-dir ${DIR} \
         TRAINER.COOP.N_CTX ${NCTX} \
         TRAINER.COOP.CSC ${CSC} \
