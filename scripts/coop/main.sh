@@ -17,13 +17,15 @@ CSC=$6 # class-specific context (False or True)
 
 # 7番目以降の引数をアンダースコアでつなげる
 DOMAIN_LIST=("${@:7}")
-DOMAIN_SEC=$(IFS=-; echo "${@:7}")
+# DOMAIN_LIST=${@:7:($# - 6)}
+DOMAIN_SEC=$(IFS=-; echo "${DOMAIN_LIST[*]}")
 
 # DOMAIN_LIST の要素数をカウント
-DOMAIN_COUNT=$(echo "$DOMAIN_LIST" | wc -w)
-TODAY=$(date +"%Y%m%d")
+# DOMAIN_COUNT=$(echo "$DOMAIN_LIST" | wc -w)
+DOMAIN_COUNT=${#DOMAIN_LIST[@]}
+TODAY=$(date +"%Y%m%d_%H%M%S")
 
-for SEED in 3
+for SEED in 0 1 
 do
     DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}/${TODAY}
     if [ -d "$DIR" ]; then
@@ -34,8 +36,8 @@ do
         --root ${DATA} \
         --seed ${SEED} \
         --trainer ${TRAINER} \
-        --dataset-config-file configs/datasets/${DATASET}.yaml \
         --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
+        --dataset-config-file configs/datasets/${DATASET}.yaml \
         --forget_domains "${DOMAIN_LIST[@]}" \
         --output-dir ${DIR} \
         TRAINER.COOP.N_CTX ${NCTX} \
