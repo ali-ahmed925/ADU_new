@@ -31,9 +31,6 @@ class TrainerDF(SimpleTrainer):
         if cfg.DATASET.NAME == "OfficeHomeDF":
             self.domain_list = ["art", "clipart", "product", "real_world"]
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
-            assert set(self.domain_list) | set(self.del_domain_list) == set(self.domain_list)
-
-            self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
 
         elif cfg.DATASET.NAME == "DomainNetDF":
             self.domain_list = [
@@ -45,7 +42,13 @@ class TrainerDF(SimpleTrainer):
             self.del_domain_list = [
                 "painting"
             ]
-    
+        elif cfg.DATASET.NAME == "PACSDF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
+            self.domain_list = ["art_painting", "cartoon", "photo", "sketch"]
+        assert (set(self.domain_list) | set(self.del_domain_list)) == set(self.domain_list)
+        self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
+
+
     def run_epoch(self):
         self.set_model_mode("train")
         losses = MetricMeter()
@@ -216,3 +219,7 @@ class TrainerDF(SimpleTrainer):
             self.write_scalar(tag, v, self.epoch)
 
         return list(results.values())[0]
+    
+def isin(elements, test_elements):
+    # Check if each element in `elements` is present in `test_elements`
+    return torch.stack([torch.any(elements == x, dim=0) for x in test_elements])
