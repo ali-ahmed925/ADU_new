@@ -26,6 +26,6 @@ for ((i = 1; i < 15; i++)); do
   done
   # コマンドを実行
   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
-  bash scripts/coop/main.sh 3 office_home_df vit_b16_ep50 end 8 False "$selected_domains_str"
+  bash scripts/coop/main.sh 3 office_home_df vit_b16_ep50 end 8 False $selected_domains_str
   # echo "${selected_domains[@]}"
 done
