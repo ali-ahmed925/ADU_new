@@ -13,7 +13,6 @@ from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer 
 
 import datetime
-from utils.loss_fn import EntropyMaximizationLoss
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from dassl.utils import (
     MetricMeter, AverageMeter, tolist_if_not, count_num_param, load_checkpoint,

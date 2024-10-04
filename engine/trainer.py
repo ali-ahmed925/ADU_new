@@ -20,7 +20,7 @@ from dassl.evaluation import build_evaluator
 
 from dassl.engine import SimpleTrainer
 
-from utils.loss_fn import EntropyMaximizationLoss
+from utils.loss_fn import Entropy
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from torch.nn import functional as F
 from torch.cuda.amp import GradScaler, autocast
@@ -107,7 +107,7 @@ class TrainerDF(SimpleTrainer):
             output = self.model(image)
             is_DF = True #FIXME
             if is_DF :
-                entropy_max_loss = EntropyMaximizationLoss()
+                entropy = Entropy()
                 false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
                 
                 # for prv_domain in prv_domain_list:
@@ -124,8 +124,8 @@ class TrainerDF(SimpleTrainer):
                 if torch.equal(false_check_tensor, del_domain_mask):
                     loss_del = 0
                 else :
-                    loss_del = entropy_max_loss(output[del_domain_mask])
-                loss = loss_prv + loss_del
+                    loss_del = entropy(output[del_domain_mask])
+                loss = loss_prv - loss_del
             else :
                 loss = F.cross_entropy(output, label)
             self.model_backward_and_update(loss)

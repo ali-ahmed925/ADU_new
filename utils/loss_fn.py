@@ -10,22 +10,32 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 import math
 
+# def get_entropy(output):
+#   ### softmaxせずに渡す (batch_size, # of classes)
+#   prob = F.softmax(output,dim=1)
+#   entropy = torch.sum(prob * torch.log(prob + 1e-5), dim=1)
+  
+#   return -torch.mean(entropy) 
 
-class EntropyMaximizationLoss(nn.Module):
-    def __init__(self, is_activation:str="softmax2d", class_num:int = 65,eps:float = 1e-7): #FIXME
+
+class Entropy(nn.Module):
+    def __init__(self, is_activation:str="softmax2d", eps:float = 1e-7): #FIXME
         super().__init__()
         self.is_activation = is_activation
-        self.class_num = class_num
+        # self.class_num = class_num
         if self.is_activation == "softmax2d":
             self.activation = torch.nn.Softmax(dim=1)
         self.eps = eps
     def forward(self, x)->torch.tensor:
         if self.is_activation:
             x = self.activation(x)                
-        t = 1 / self.class_num
-        for_loss = torch.sum((t * torch.log( x + self.eps)), 1)
-        for_loss = - (torch.sum(for_loss) /len(for_loss))
-        return for_loss
+        # t = 1 / self.class_num
+        entropy = torch.sum(x * torch.log(x + 1e-5), dim=1)
+  
+        return -torch.mean(entropy)
+        # for_loss = torch.sum((t * torch.log( x + self.eps)), 1)
+        # for_loss = - (torch.sum(for_loss) /len(for_loss))
+        # return for_loss
 
 # class ArcMarginProduct(nn.Module):
 #     r"""Implement of large margin arc distance: :

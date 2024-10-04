@@ -16,7 +16,6 @@ from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 
 from utils.eval_acc import compute_acc_for_df
-from utils.loss_fn import EntropyMaximizationLoss
 
 from engine.trainer import TrainerDF
 

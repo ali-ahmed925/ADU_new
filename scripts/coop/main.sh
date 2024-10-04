@@ -25,7 +25,7 @@ DOMAIN_SEC=$(IFS=-; echo "${DOMAIN_LIST[*]}")
 DOMAIN_COUNT=${#DOMAIN_LIST[@]}
 TODAY=$(date +"%Y%m%d_%H%M%S")
 
-for SEED in 0 1 
+for SEED in 0 
 do
     DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}/${TODAY}
     if [ -d "$DIR" ]; then
