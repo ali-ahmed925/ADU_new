@@ -13,7 +13,6 @@ from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 
 import datetime
-from utils.loss_fn import EntropyMaximizationLoss
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from dassl.utils import (
     MetricMeter, AverageMeter, tolist_if_not, count_num_param, load_checkpoint,
@@ -180,7 +179,6 @@ class CLIP_Adapter(TrainerX):
         output = self.model(image)
         is_DF = True #FIXME
         if is_DF :
-            entropy_max_loss = EntropyMaximizationLoss()
             domain_list = ["art", "clipart", "product", "real_world"]
             prv_domain_list = ["clipart", "product", "real_world"]
             del_domain_list = ["art"]
@@ -216,8 +214,8 @@ class CLIP_Adapter(TrainerX):
                 loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
             if torch.equal(false_check_tensor, del_domain_mask):
                 loss_del = 0
-            else :
-                loss_del = entropy_max_loss(output[del_domain_mask])
+            # else :
+            #     loss_del = entropy_max_loss(output[del_domain_mask])
             loss = 0.01 * (loss_prv + loss_del)
         else: 
             loss = F.cross_entropy(output, label)

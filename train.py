@@ -20,6 +20,7 @@ import datasets.imagenet
 import datasets.domainnet_df
 import datasets.office_home_df
 import datasets.office_home_df_domain
+import datasets.pacs_df
 
 import datasets.imagenet_sketch
 import datasets.imagenetv2
@@ -252,17 +253,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-train", action="store_true", help="do not call trainer.train()"
     )
-    parser.add_argument(
-        "opts",
-        default=None,
-        nargs=argparse.REMAINDER,
-        help="modify config options using the command-line",
-    )
+
     parser.add_argument(
         "--forget_domains",
         default=[],
         nargs="*",
         help="input forget domains like '--forget_domains domain1 domain2 ..' "
+    )
+    
+    parser.add_argument(
+        "opts",
+        default=None,
+        nargs=argparse.REMAINDER,
+        help="modify config options using the command-line",
     )
     args = parser.parse_args()
     main(args)

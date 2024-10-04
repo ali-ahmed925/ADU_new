@@ -20,7 +20,7 @@ from dassl.evaluation import build_evaluator
 
 from dassl.engine import SimpleTrainer
 
-from utils.loss_fn import EntropyMaximizationLoss
+from utils.loss_fn import Entropy
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from torch.nn import functional as F
 from torch.cuda.amp import GradScaler, autocast
@@ -31,9 +31,6 @@ class TrainerDF(SimpleTrainer):
         if cfg.DATASET.NAME == "OfficeHomeDF":
             self.domain_list = ["art", "clipart", "product", "real_world"]
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
-            assert set(self.domain_list) | set(self.del_domain_list) == set(self.domain_list)
-
-            self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
 
         elif cfg.DATASET.NAME == "DomainNetDF":
             self.domain_list = [
@@ -45,7 +42,13 @@ class TrainerDF(SimpleTrainer):
             self.del_domain_list = [
                 "painting"
             ]
-    
+        elif cfg.DATASET.NAME == "PACSDF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
+            self.domain_list = ["art_painting", "cartoon", "photo", "sketch"]
+        assert (set(self.domain_list) | set(self.del_domain_list)) == set(self.domain_list)
+        self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
+
+
     def run_epoch(self):
         self.set_model_mode("train")
         losses = MetricMeter()
@@ -104,7 +107,7 @@ class TrainerDF(SimpleTrainer):
             output = self.model(image)
             is_DF = True #FIXME
             if is_DF :
-                entropy_max_loss = EntropyMaximizationLoss()
+                entropy = Entropy()
                 false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
                 
                 # for prv_domain in prv_domain_list:
@@ -121,8 +124,8 @@ class TrainerDF(SimpleTrainer):
                 if torch.equal(false_check_tensor, del_domain_mask):
                     loss_del = 0
                 else :
-                    loss_del = entropy_max_loss(output[del_domain_mask])
-                loss = loss_prv + loss_del
+                    loss_del = entropy(output[del_domain_mask])
+                loss = loss_prv - loss_del
             else :
                 loss = F.cross_entropy(output, label)
             self.model_backward_and_update(loss)
@@ -216,3 +219,7 @@ class TrainerDF(SimpleTrainer):
             self.write_scalar(tag, v, self.epoch)
 
         return list(results.values())[0]
+    
+def isin(elements, test_elements):
+    # Check if each element in `elements` is present in `test_elements`
+    return torch.stack([torch.any(elements == x, dim=0) for x in test_elements])

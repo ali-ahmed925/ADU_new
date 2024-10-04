@@ -13,7 +13,6 @@ from dassl.optim import build_optimizer, build_lr_scheduler
 from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 import datetime
-from utils.loss_fn import EntropyMaximizationLoss
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from dassl.utils import (
     MetricMeter, AverageMeter, tolist_if_not, count_num_param, load_checkpoint,
@@ -347,7 +346,7 @@ class CoOpDomainSpecific(TrainerDF):
             output = self.model(image)
             is_DF = True #FIXME
             if is_DF :
-                entropy_max_loss = EntropyMaximizationLoss()
+                # entropy_max_loss = EntropyMaximizationLoss()
                 false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
                 
                 # for prv_domain in prv_domain_list:
@@ -363,8 +362,8 @@ class CoOpDomainSpecific(TrainerDF):
                     loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
                 if torch.equal(false_check_tensor, del_domain_mask):
                     loss_del = 0
-                else :
-                    loss_del = entropy_max_loss(output[del_domain_mask])
+                # else :
+                #     loss_del = entropy_max_loss(output[del_domain_mask])
                 loss = loss_prv + loss_del
             else :
                 loss = F.cross_entropy(output, label)
