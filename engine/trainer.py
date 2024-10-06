@@ -219,7 +219,6 @@ class TrainerDF(SimpleTrainer):
             self.write_scalar(tag, v, self.epoch)
 
         return list(results.values())[0]
-    
-def isin(elements, test_elements):
-    # Check if each element in `elements` is present in `test_elements`
-    return torch.stack([torch.any(elements == x, dim=0) for x in test_elements])
+
+
+# class PromptStylerTrainer(SimpleTrainer):

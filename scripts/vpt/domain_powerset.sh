@@ -15,7 +15,7 @@ cd ../../
 #   # echo "${selected_domains[@]}"
 # done
 domains=("art" "clipart" "product" "real_world")
-for ((i = 1; i < 15; i++)); do
+for ((i = 3; i < 15; i++)); do
   # バイナリ数として各組み合わせを選択
   selected_domains=()
   for ((j = 0; j < 4; j++)); do
