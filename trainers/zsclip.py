@@ -80,7 +80,7 @@ class ZeroshotCLIP(TrainerX):
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         logit_scale = self.clip_model.logit_scale.exp()
         logits = logit_scale * image_features @ self.text_features.t()
-        return logits
+        return logits, image_features, self.text_features
 
     def parse_batch_test(self, batch):
         input = batch["img"]
@@ -112,7 +112,7 @@ class ZeroshotCLIP(TrainerX):
         eval_dict = {}
         for batch_idx, batch in enumerate(tqdm(data_loader)):
             input, label, domain = self.parse_batch_test(batch)
-            output = self.model_inference(input)
+            output, image_features, text_features = self.model_inference(input)
             self.evaluator.process(output, label)
 
             # for prv_domain in prv_domain_list:

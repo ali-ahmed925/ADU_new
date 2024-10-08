@@ -25,7 +25,7 @@ from dassl.utils import (
 import time
 from tqdm import tqdm
 
-from engine.trainer import TrainerDF
+from engine.trainer import TrainerDF, TrainerFeatG
 
 _tokenizer = _Tokenizer()
 
@@ -123,7 +123,7 @@ class CustomCLIP(nn.Module):
         # if training:
         #     return F.cross_entropy(logits, label)
 
-        return logits
+        return logits, image_features, text_features
 
 
 @TRAINER_REGISTRY.register()

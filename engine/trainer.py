@@ -21,10 +21,12 @@ from dassl.evaluation import build_evaluator
 from dassl.engine import SimpleTrainer
 
 from utils.loss_fn import Entropy
+from dassl.metrics.accuracy import compute_accuracy
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from torch.nn import functional as F
 from torch.cuda.amp import GradScaler, autocast
 
+# 名前適当
 class TrainerDF(SimpleTrainer):
     def __init__(self, cfg):
         super().__init__(cfg)
@@ -45,9 +47,12 @@ class TrainerDF(SimpleTrainer):
         elif cfg.DATASET.NAME == "PACSDF":
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = ["art_painting", "cartoon", "photo", "sketch"]
+            # self.classnames = [
+            #     "dog", "elephant", "giraffe", "guitar", "horse", "house", "person"
+            # ]
         assert (set(self.domain_list) | set(self.del_domain_list)) == set(self.domain_list)
         self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
-
+        self.classnames = self.dm.dataset.classnames
 
     def run_epoch(self):
         self.set_model_mode("train")
@@ -97,16 +102,15 @@ class TrainerDF(SimpleTrainer):
         prec = self.cfg.TRAINER.COOP.PREC
         if prec == "amp":
             with autocast():
-                output = self.model(image)
+                output, img_feat, txt_feat = self.model(image)
                 loss = F.cross_entropy(output, label)
             self.optim.zero_grad()
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optim)
             self.scaler.update()
         else:
-            output = self.model(image)
-            is_DF = True #FIXME
-            if is_DF :
+            output, img_feat, txt_feat = self.model(image)
+            if self.cfg.IS_DOMAIN_FORGETTING:
                 entropy = Entropy()
                 false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
                 
@@ -127,16 +131,32 @@ class TrainerDF(SimpleTrainer):
                     loss_del = entropy(output[del_domain_mask])
                 loss = loss_prv - loss_del
             else :
+                # print(type(output))
+                # print(type(label))
+
+                # print(output.shape)
+                # print(label.shape)
                 loss = F.cross_entropy(output, label)
             self.model_backward_and_update(loss)
-        loss_summary = {
-            "loss": loss.item(),
-            "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
-            "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
-            # "acc": compute_accuracy(output, label)[0].item(),
-        }
-        acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
-        loss_summary.update(acc)
+        
+        if not self.cfg.NO_FORGET:
+            loss_summary = {
+                "loss": loss.item(),
+                "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
+                "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
+                # "acc": compute_accuracy(output, label)[0].item(),
+            }
+            acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
+            loss_summary.update(acc)
+            # loss_summary.update(acc)
+        else :
+            loss_summary = {
+                "loss": loss.item(),
+                "acc": compute_accuracy(output, label)[0].item()
+            }
+            # acc = compute_accuracy(output, label)[0].item()
+        # acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
+        
         if (self.batch_idx + 1) == self.num_batches:
             self.update_lr()
 
@@ -182,7 +202,7 @@ class TrainerDF(SimpleTrainer):
         eval_dict = {}
         for batch_idx, batch in enumerate(tqdm(data_loader)):
             input, label, domain = self.parse_batch_test(batch)
-            output = self.model_inference(input)
+            output, img_feat, txt_feat = self.model_inference(input)
             self.evaluator.process(output, label)
 
             # for prv_domain in prv_domain_list:
@@ -202,23 +222,52 @@ class TrainerDF(SimpleTrainer):
                 self.domain_list,
                 self.device
             ) 
+            if batch_idx == 0:
+                label_all = label
+                domain_all = domain
+                img_feat_all = img_feat
+                # input_all = input
+
+            else :
+                label_all = torch.cat((label_all, label))
+                domain_all = torch.cat((domain_all, domain))
+                img_feat_all = torch.cat((img_feat_all, img_feat))
+                # input_all = torch.cat((input_all, input))
+
+        for cls_id, clsname in enumerate(self.classnames):
+            cls_specific_index = (label_all == cls_id)
+            if torch.all(cls_specific_index == False):
+                pass
+            else:
+                domain_metadata = []
+                for d in domain_all[cls_specific_index]:
+                    domain_metadata.append(self.domain_list[int(d)])
+                tag = f"{split}/tsne-plot/{clsname}"
+                # self.write_embedding(img_feat[cls_specific_index], domain_metadata, input[cls_specific_index], global_step=batch_idx, tag=tag)
+                self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
 
         results = self.evaluator.evaluate()
-        print("==========peservation or delete acc===============")
-        for name in ["prv", "del"]:
-            acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
-            print(f"{name} : {acc:.2f}")
-        print("==============domain specific acc=================")
-        for domain_name in self.domain_list:
-            acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
-            print(f"{domain_name} : {acc:.2f}")
-        print("===================================================")
+        if not self.cfg.NO_FORGET:
+            print("==========peservation or delete acc===============")
+            for name in ["prv", "del"]:
+                acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
+                print(f"{name} : {acc:.2f}")
+            print("==============domain specific acc=================")
+            for domain_name in self.domain_list:
+                acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
+                print(f"{domain_name} : {acc:.2f}")
+            print("===================================================")
 
         for k, v in results.items():
             tag = f"{split}/{k}"
             self.write_scalar(tag, v, self.epoch)
 
         return list(results.values())[0]
-
-
-# class PromptStylerTrainer(SimpleTrainer):
+    
+    def write_embedding(self, mat, meta_data, label_img=None, global_step=None, tag=None):
+        if self._writer is None:
+            # Do nothing if writer is not initialized
+            # Note that writer is only used when training is needed
+            pass
+        else:
+            self._writer.add_embedding(mat, meta_data, label_img, global_step, tag)

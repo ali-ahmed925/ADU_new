@@ -129,7 +129,7 @@ class CustomCLIP(nn.Module):
         logit_scale = self.logit_scale.exp()
         logits = logit_scale * image_features @ text_features.t()
 
-        return logits
+        return logits, image_features, text_features
 
 
 @TRAINER_REGISTRY.register()
