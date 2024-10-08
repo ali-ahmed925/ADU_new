@@ -139,7 +139,7 @@ class TrainerDF(SimpleTrainer):
                 loss = F.cross_entropy(output, label)
             self.model_backward_and_update(loss)
         
-        if self.cfg.IS_DOMAIN_FORGETTING:
+        if not self.cfg.NO_FORGET:
             loss_summary = {
                 "loss": loss.item(),
                 "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
@@ -247,7 +247,7 @@ class TrainerDF(SimpleTrainer):
                 self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
 
         results = self.evaluator.evaluate()
-        if self.cfg.IS_DOMAIN_FORGETTING:
+        if not self.cfg.NO_FORGET:
             print("==========peservation or delete acc===============")
             for name in ["prv", "del"]:
                 acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
