@@ -185,7 +185,7 @@ class CustomCLIP(nn.Module):
         # if self.prompt_learner.training:
         #     return F.cross_entropy(logits, label)
 
-        return logits
+        return logits, text_features, image_features
 
 
 @TRAINER_REGISTRY.register()

@@ -97,8 +97,15 @@ def extend_cfg(cfg, args):
     from yacs.config import CfgNode as CN
 
     if len(args.forget_domains) > 0:
+        if "none" in args.forget_domains:
+            cfg.DATASET.FORGETDOMAINS = []
+        else :
+            cfg.DATASET.FORGETDOMAINS = args.forget_domains
+    else :
         cfg.DATASET.FORGETDOMAINS = args.forget_domains
         # print(cfg.DATASET.FORGETDOMAINS)
+    
+    cfg.NO_FORGET = args.no_forget
 
     cfg.TRAINER.COOP = CN()
     cfg.TRAINER.COOP.N_CTX = 16  # number of context vectors
@@ -252,6 +259,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--no-train", action="store_true", help="do not call trainer.train()"
+    )
+
+    parser.add_argument(
+        "--no_forget", action="store_false", help="ON/OFF domain forgetting mode"
     )
 
     parser.add_argument(
