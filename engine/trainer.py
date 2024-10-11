@@ -26,7 +26,6 @@ from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from torch.nn import functional as F
 from torch.cuda.amp import GradScaler, autocast
 
-# 名前適当
 class TrainerDF(SimpleTrainer):
     def __init__(self, cfg):
         super().__init__(cfg)
