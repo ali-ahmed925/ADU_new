@@ -22,7 +22,7 @@ from dassl.utils import (
 )
 import time
 from tqdm import tqdm
-from engine.trainer import TrainerDF
+from engine.trainer import TrainerDF, TrainerDF_CosEmb
 
 _tokenizer = _Tokenizer()
 
@@ -227,7 +227,7 @@ class CustomCLIP(nn.Module):
 
 
 @TRAINER_REGISTRY.register()
-class CoOp(TrainerDF):
+class CoOp_CosEmb(TrainerDF_CosEmb):
     """Context Optimization (CoOp).
 
     Learning to Prompt for Vision-Language Models

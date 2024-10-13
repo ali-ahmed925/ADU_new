@@ -18,6 +18,28 @@ import math
 #   return -torch.mean(entropy) 
 
 
+def cossine_embedding_loss(input, domain_label, label):
+    cosemb = torch.nn.CosineEmbeddingLoss()
+    loss = 0
+    target_label = domain_label.int()*2 - 1
+    # for cls_id, cls in enumerate(classnames):
+    #     cls_specific_index = (label == cls_id)
+        # if torch.all(cls_specific_index == False):
+        #     pass
+        # else :
+        #     if input[cls_specific_index].dim() == 1:
+        #         target = domain_label[cls_specific_index] * domain_label[cls_specific_index]
+        #         loss += cosemb(input[cls_specific_index].unsqueeze(0), input[cls_specific_index].unsqueeze(0), target)
+        #     else :
+    for idx in range(input.size(0)):
+        # cls_bool = (label == label[idx])
+        # domain_bool = (target_label == target_label[idx])
+        # y = (cls_bool & domain_bool).int()*2 - 1
+        y = target_label
+        loss += cosemb(input[idx].unsqueeze(0), input, y)
+
+    return loss / input.size(0)
+
 class Entropy(nn.Module):
     def __init__(self, is_activation:str="softmax2d", eps:float = 1e-7): #FIXME
         super().__init__()

@@ -25,7 +25,7 @@ from dassl.utils import (
 import time
 from tqdm import tqdm
 
-from engine.trainer import TrainerDF, TrainerFeatG
+from engine.trainer import TrainerDF
 
 _tokenizer = _Tokenizer()
 
