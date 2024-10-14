@@ -34,15 +34,11 @@ class TrainerDF(SimpleTrainer):
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
 
         elif cfg.DATASET.NAME == "DomainNetDF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = [
                 "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
             ]
-            self.prv_domain_list = [
-                "clipart", "infograph", "quickdraw", "real", "sketch"
-            ]
-            self.del_domain_list = [
-                "painting"
-            ]
+    
         elif cfg.DATASET.NAME == "PACSDF":
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = ["art_painting", "cartoon", "photo", "sketch"]
@@ -299,14 +295,9 @@ class TrainerDF_CosEmb(SimpleTrainer):
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
 
         elif cfg.DATASET.NAME == "DomainNetDF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = [
                 "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
-            ]
-            self.prv_domain_list = [
-                "clipart", "infograph", "quickdraw", "real", "sketch"
-            ]
-            self.del_domain_list = [
-                "painting"
             ]
         elif cfg.DATASET.NAME == "PACSDF":
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
@@ -551,14 +542,9 @@ class TrainerDF_COPY(SimpleTrainer):
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
 
         elif cfg.DATASET.NAME == "DomainNetDF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = [
                 "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
-            ]
-            self.prv_domain_list = [
-                "clipart", "infograph", "quickdraw", "real", "sketch"
-            ]
-            self.del_domain_list = [
-                "painting"
             ]
         elif cfg.DATASET.NAME == "PACSDF":
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
