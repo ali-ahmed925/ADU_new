@@ -41,6 +41,9 @@ import trainers.coop_with_dh
 import trainers.coop_with_adapter
 import trainers.coop_cosembloss
 
+import trainers.vpt_with_dh
+import trainers.vpt_with_adapter
+
 def print_args(args, cfg):
     print("***************")
     print("** Arguments **")
