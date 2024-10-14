@@ -236,7 +236,7 @@ class CustomCLIP(nn.Module):
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
         self.domain_separate_module = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, domain_num)
+        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
         self.domain_classifier.to(self.dtype)
         # is_adapter = True
         # self.is_adapter = is_adapter
