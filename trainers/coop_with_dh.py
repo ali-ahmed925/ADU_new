@@ -236,7 +236,7 @@ class CustomCLIP(nn.Module):
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
         self.domain_separate_module = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, domain_num)
+        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
         self.domain_classifier.to(self.dtype)
         # is_adapter = True
         # self.is_adapter = is_adapter
@@ -294,7 +294,21 @@ class CoOp_w_DH(TrainerDF_COPY):
         self.model = CustomCLIP(cfg, classnames, clip_model, 4) #FIXME
         print("Turning off gradients in both the image and the text encoder")
         for name, param in self.model.named_parameters():
-            if ("prompt_learner" or "domain") not in name:
+            # if ("prompt_learner" or "domain_separate_module" or "domain_classifier") not in name:
+            #     param.requires_grad_(False)
+            #     print(name)
+            # else :
+            #     print(name)
+            if "prompt_learner" in name:
+                param.requires_grad_(True)
+                print(name)
+            elif "domain_separate_module" in name:
+                param.requires_grad_(True)
+                print(name)
+            elif "domain_classifier" in name:
+                param.requires_grad_(True)
+                print(name)
+            else :
                 param.requires_grad_(False)
 
         if cfg.MODEL.INIT_WEIGHTS:

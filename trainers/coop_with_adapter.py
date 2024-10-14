@@ -294,7 +294,13 @@ class CoOp_w_Adapter(TrainerDF):
         self.model = CustomCLIP(cfg, classnames, clip_model, 4) #FIXME
         print("Turning off gradients in both the image and the text encoder")
         for name, param in self.model.named_parameters():
-            if ("prompt_learner" or "domain") not in name:
+            if "prompt_learner" in name:
+                param.requires_grad_(True)
+                print(name)
+            elif "domain_separate_module" in name:
+                param.requires_grad_(True)
+                print(name)
+            else :
                 param.requires_grad_(False)
 
         if cfg.MODEL.INIT_WEIGHTS:
