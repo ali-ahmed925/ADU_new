@@ -29,31 +29,24 @@ CUSTOM_TEMPLATES = {
     "ImageNetA": "a photo of a {}.",
     "ImageNetR": "a photo of a {}.",
     "OfficeHomeDF": "a photo of a {}.",
-    "DomainNetDF": "a photo of a {}"
+    "DomainNetDF": "a photo of a {}",
+    "PACSDF": "a photo of a {}",
 }
 
+from dassl.utils import (
+    MetricMeter, AverageMeter, tolist_if_not, count_num_param, load_checkpoint,
+    save_checkpoint, mkdir_if_missing, resume_from_checkpoint,
+    load_pretrained_weights
+)
 
+import os.path as osp
+import time
+from engine.trainer import TrainerDF
 @TRAINER_REGISTRY.register()
-class ZeroshotCLIP(TrainerX):
+class ZeroshotCLIP(TrainerDF):
     def __init__(self, cfg):
         super().__init__(cfg)
-        # self.domain_list = ["art", "clipart", "product", "real_world"]
-        # self.prv_domain_list = ["clipart", "product", "real_world"]
-        # self.del_domain_list = ["art"]
-        if cfg.DATASET.NAME == "OfficeHomeDF":
-            self.domain_list = ["art", "clipart", "product", "real_world"]
-            self.prv_domain_list = ["clipart", "product", "real_world"]
-            self.del_domain_list = ["art"]
-        elif cfg.DATASET.NAME == "DomainNetDF":
-            self.domain_list = [
-                "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
-            ]
-            self.prv_domain_list = [
-                "clipart", "infograph", "quickdraw", "real", "sketch"
-            ]
-            self.del_domain_list = [
-                "painting"
-            ]
+
     def build_model(self):
         cfg = self.cfg
         classnames = self.dm.dataset.classnames
@@ -93,9 +86,28 @@ class ZeroshotCLIP(TrainerX):
 
         return input, label, domain
     
+    def set_tensorboard(self):
+        if not self.cfg.EVAL_ONLY:
+            return
+        else : # before_trainのコピペ
+            directory = self.cfg.OUTPUT_DIR
+            # if self.cfg.RESUME:
+            #     directory = self.cfg.RESUME
+            self.start_epoch = 0 # self.resume_model_if_exist(directory) #FIXME
+
+            # Initialize summary writer
+            writer_dir = osp.join(self.output_dir, "tensorboard")
+            mkdir_if_missing(writer_dir)
+            self.init_writer(writer_dir)
+
+            # Remember the starting time (for computing the elapsed time)
+            self.time_start = time.time()
+
+    
     @torch.no_grad()
     def test(self, split=None):
         """A generic testing pipeline."""
+        self.set_tensorboard()
         self.set_model_mode("eval")
         self.evaluator.reset()
 
@@ -112,7 +124,7 @@ class ZeroshotCLIP(TrainerX):
         eval_dict = {}
         for batch_idx, batch in enumerate(tqdm(data_loader)):
             input, label, domain = self.parse_batch_test(batch)
-            output, image_features, text_features = self.model_inference(input)
+            output, img_feat, txt_feat = self.model_inference(input)
             self.evaluator.process(output, label)
 
             # for prv_domain in prv_domain_list:
@@ -132,59 +144,52 @@ class ZeroshotCLIP(TrainerX):
                 self.domain_list,
                 self.device
             ) 
+            if batch_idx == 0:
+                label_all = label
+                domain_all = domain
+                img_feat_all = img_feat
+                # input_all = input
+
+            else :
+                label_all = torch.cat((label_all, label))
+                domain_all = torch.cat((domain_all, domain))
+                img_feat_all = torch.cat((img_feat_all, img_feat))
+                # input_all = torch.cat((input_all, input))
+
+        for cls_id, clsname in enumerate(self.classnames):
+            cls_specific_index = (label_all == cls_id)
+            if torch.all(cls_specific_index == False):
+                pass
+            else:
+                domain_metadata = []
+                for d in domain_all[cls_specific_index]:
+                    domain_metadata.append(self.domain_list[int(d)])
+                tag = f"{split}/tsne-plot/{clsname}"
+                # self.write_embedding(img_feat[cls_specific_index], domain_metadata, input[cls_specific_index], global_step=batch_idx, tag=tag)
+                self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
 
         results = self.evaluator.evaluate()
-        print("==========peservation or delete acc===============")
-        for name in ["prv", "del"]:
-            acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
-            print(f"{name} : {acc:.2f}")
-        print("==============domain specific acc=================")
-        for domain_name in self.domain_list:
-            acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
-            print(f"{domain_name} : {acc:.2f}")
-        print("===================================================")
+        if not self.cfg.NO_FORGET:
+            print("==========peservation or delete acc===============")
+            for name in ["prv", "del"]:
+                acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
+                print(f"{name} : {acc:.2f}")
+            print("==============domain specific acc=================")
+            for domain_name in self.domain_list:
+                acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
+                print(f"{domain_name} : {acc:.2f}")
+            print("===================================================")
 
         for k, v in results.items():
             tag = f"{split}/{k}"
             self.write_scalar(tag, v, self.epoch)
 
         return list(results.values())[0]
-
-
-@TRAINER_REGISTRY.register()
-class ZeroshotCLIP2(ZeroshotCLIP):
-    """Prompt ensembling."""
-
-    # templates = IMAGENET_TEMPLATES
-    templates = IMAGENET_TEMPLATES_SELECT
-
-    def build_model(self):
-        cfg = self.cfg
-        classnames = self.dm.dataset.classnames
-
-        print(f"Loading CLIP (backbone: {cfg.MODEL.BACKBONE.NAME})")
-        clip_model = load_clip_to_cpu(cfg)
-        clip_model.to(self.device)
-
-        for params in clip_model.parameters():
-            params.requires_grad_(False)
-
-        # add custom-made prompt
-        if cfg.DATASET.NAME != "ImageNet":
-            self.templates += [CUSTOM_TEMPLATES[cfg.DATASET.NAME]]
-
-        num_temp = len(self.templates)
-        print(f"Prompt ensembling (n={num_temp})")
-
-        mean_text_features = 0
-        for i, temp in enumerate(self.templates):
-            prompts = [temp.format(c.replace("_", " ")) for c in classnames]
-            prompts = torch.cat([clip.tokenize(p) for p in prompts]).to(self.device)
-            text_features = clip_model.encode_text(prompts)
-            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-            mean_text_features = mean_text_features + text_features
-        mean_text_features = mean_text_features / num_temp
-        mean_text_features = mean_text_features / mean_text_features.norm(dim=-1, keepdim=True)
-
-        self.text_features = mean_text_features
-        self.clip_model = clip_model
+    
+    def write_embedding(self, mat, meta_data, label_img=None, global_step=None, tag=None):
+        if self._writer is None:
+            # Do nothing if writer is not initialized
+            # Note that writer is only used when training is needed
+            pass
+        else:
+            self._writer.add_embedding(mat, meta_data, label_img, global_step, tag)
