@@ -4,16 +4,16 @@ export CUDA_VISIBLE_DEVICES=$1
 
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
-TRAINER=VPT
+TRAINER=CLIP_Adapter
 
 DATASET=$2
 SEED=$3
 CFG=$4
-NCTX=$5 # 8
-DEPTH_VISION=$6 # 9
+# NCTX=$5 # 8
+# DEPTH_VISION=$6 # 9
 
 # 7番目以降の引数をアンダースコアでつなげる
-DOMAIN_LIST=("${@:7}")
+DOMAIN_LIST=("${@:5}")
 
 DOMAIN_SEC=$(IFS=-; echo "${DOMAIN_LIST[*]}")
 DOMAIN_COUNT=${#DOMAIN_LIST[@]}
@@ -33,7 +33,5 @@ else
     --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
     --forget_domains "${DOMAIN_LIST[@]}" \
     --output-dir ${DIR} \
-    TRAINER.${TRAINER}.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
-    TRAINER.${TRAINER}.N_CTX_VISION ${NCTX} \
     # TRAINER.${TRAINER}. ${NCTX} \
 fi

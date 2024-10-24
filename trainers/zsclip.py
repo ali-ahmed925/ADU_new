@@ -12,6 +12,10 @@ from .imagenet_templates import IMAGENET_TEMPLATES, IMAGENET_TEMPLATES_SELECT
 from tqdm import tqdm
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 
+import cv2
+from PIL import Image
+import matplotlib.pyplot as plt
+
 CUSTOM_TEMPLATES = {
     "OxfordPets": "a photo of a {}, a type of pet.",
     "OxfordFlowers": "a photo of a {}, a type of flower.",
@@ -155,6 +159,36 @@ class ZeroshotCLIP(TrainerDF):
                 domain_all = torch.cat((domain_all, domain))
                 img_feat_all = torch.cat((img_feat_all, img_feat))
                 # input_all = torch.cat((input_all, input))
+            
+            img_np = input.cpu().numpy()
+            cv2_img = cv2.cvtColor (img_np, cv2.COLOR_RGB2BGR)
+            
+
+            features = img_feat @ txt_feat.t()
+            similarity_map = clip.get_similarity_map(features[:,1:, :], cv2_img.shape[:2])
+
+            for b in range(similarity_map.shape[0]):
+                for n in range(similarity_map.shape[-1]):
+                    vis = (similarity_map[b, :, :, n].cpu().numpy() * 255).astype('uint8')
+                    vis = cv2.applyColorMap(vis, cv2.COLORMAP_JET)
+                    vis = cv2_img * 0.4 + vis * 0.6
+                    vis = cv2.cvtColor(vis.astype('uint8'), cv2.COLOR_BGR2RGB)
+                    print('CLIP:', self.classnames[n])
+                    plt.imsave(f"{self.classnames[n]}.png", vis)
+
+
+        # meta_data_cls_agno = []
+        # meta_data_cls_agno = []
+        # tag = f"{split}/cls-agnostic"
+
+        # print(label_all.shape, img_feat_all.shape)
+        # for idx, (lbl, dlbl) in enumerate(zip(label_all, domain_all)):  
+        #     # if idx == (label_all.size(0) -1 ) :
+        #     #     meta_data_cls_agno.append(f"{lbl.item()}\t{dlbl.item()}")
+        #     # else:
+        #     meta_data_cls_agno.append([f"{lbl.item()}", f"{self.domain_list[dlbl.item()]}"])
+
+        # self.write_embedding(img_feat_all, meta_data_cls_agno, tag=tag, metadata_header=["Object_Class", "Domain_Class"])
 
         for cls_id, clsname in enumerate(self.classnames):
             cls_specific_index = (label_all == cls_id)
@@ -186,10 +220,10 @@ class ZeroshotCLIP(TrainerDF):
 
         return list(results.values())[0]
     
-    def write_embedding(self, mat, meta_data, label_img=None, global_step=None, tag=None):
+    def write_embedding(self, mat, meta_data, label_img=None, global_step=None, tag=None, metadata_header=None):
         if self._writer is None:
             # Do nothing if writer is not initialized
             # Note that writer is only used when training is needed
             pass
         else:
-            self._writer.add_embedding(mat, meta_data, label_img, global_step, tag)
+            self._writer.add_embedding(mat, meta_data, label_img, global_step, tag, metadata_header=metadata_header)

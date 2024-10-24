@@ -44,6 +44,7 @@ import trainers.coop_cosembloss
 import trainers.vpt_with_dh
 import trainers.vpt_with_adapter
 import trainers.vpt_with_dc
+import trainers.vpt_cosemb
 
 def print_args(args, cfg):
     print("***************")

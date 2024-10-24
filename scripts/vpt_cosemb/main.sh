@@ -4,7 +4,7 @@ export CUDA_VISIBLE_DEVICES=$1
 
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
-TRAINER=VPT
+TRAINER=VPT_CosEmb
 
 DATASET=$2
 SEED=$3
@@ -33,7 +33,7 @@ else
     --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
     --forget_domains "${DOMAIN_LIST[@]}" \
     --output-dir ${DIR} \
-    TRAINER.${TRAINER}.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
-    TRAINER.${TRAINER}.N_CTX_VISION ${NCTX} \
+    TRAINER.VPT.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
+    TRAINER.VPT.N_CTX_VISION ${NCTX} \
     # TRAINER.${TRAINER}. ${NCTX} \
 fi

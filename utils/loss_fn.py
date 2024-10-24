@@ -33,10 +33,14 @@ def cossine_embedding_loss(input, domain_label, label):
         #     else :
     for idx in range(input.size(0)):
         # cls_bool = (label == label[idx])
-        # domain_bool = (target_label == target_label[idx])
+        domain_bool = (target_label == target_label[idx])
         # y = (cls_bool & domain_bool).int()*2 - 1
-        y = target_label
-        loss += cosemb(input[idx].unsqueeze(0), input, y)
+        label_bool = torch.isin(label, label[idx])
+        y = (label_bool & domain_bool).int()*2 - 1
+        # print(input.shape)
+        # print("hello",y[label_bool].shape, input[idx].shape, input[label_bool].shape)
+        # print(label_bool)
+        loss += cosemb(input[idx].unsqueeze(0), input[label_bool], y[label_bool])
 
     return loss / input.size(0)
 
