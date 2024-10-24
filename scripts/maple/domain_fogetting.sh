@@ -1,16 +1,16 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=$1
 #cd ../..
 
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
 TRAINER=MaPLe
 
-DATASET=$1
-SEED=$2
+DATASET=$2
+SEED=$3
 
-CFG=vit_b16_c2_ep50_batch128_8ctx
-SHOTS=16
+CFG=$4 # vit_b16_ep50
+# SHOTS=16
 
 
 DIR=output/${DATASET}/${TRAINER}/${CFG}/seed${SEED}
