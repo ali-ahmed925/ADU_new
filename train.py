@@ -36,6 +36,15 @@ import trainers.promptsrc
 import trainers.vpt
 import trainers.clip_adapter
 import trainers.coop_domain_specific
+import trainers.domain_head
+import trainers.coop_with_dh
+import trainers.coop_with_adapter
+import trainers.coop_cosembloss
+
+import trainers.vpt_with_dh
+import trainers.vpt_with_adapter
+import trainers.vpt_with_dc
+import trainers.vpt_cosemb
 
 def print_args(args, cfg):
     print("***************")
@@ -106,6 +115,19 @@ def extend_cfg(cfg, args):
         # print(cfg.DATASET.FORGETDOMAINS)
     
     cfg.NO_FORGET = args.no_forget
+    cfg.EVAL_ONLY = args.eval_only
+
+    cfg.TRAINER.COOP_W_ADAPTER = CN()
+
+    cfg.TRAINER.DOMAINCLS = CN()
+    cfg.TRAINER.DOMAINCLS.PREC = "fp16" 
+
+    cfg.TRAINER.COOP_W_DH = CN()
+    cfg.TRAINER.COOP_W_DH.N_CTX = 16  # number of context vectors
+    cfg.TRAINER.COOP_W_DH.CSC = False  # class-specific context
+    cfg.TRAINER.COOP_W_DH.CTX_INIT = ""  # initialization words
+    cfg.TRAINER.COOP_W_DH.PREC = "fp16"  # fp16, fp32, amp
+    cfg.TRAINER.COOP_W_DH.CLASS_TOKEN_POSITION = "end"  # 'middle' or 'end' or 'front'
 
     cfg.TRAINER.COOP = CN()
     cfg.TRAINER.COOP.N_CTX = 16  # number of context vectors
@@ -262,7 +284,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no_forget", action="store_false", help="ON/OFF domain forgetting mode"
+        "--no_forget", action="store_true", help="ON/OFF domain forgetting mode"
     )
 
     parser.add_argument(

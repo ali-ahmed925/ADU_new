@@ -125,9 +125,9 @@ class CustomCLIP(nn.Module):
 
         return logits, image_features, text_features
 
-
+from engine.trainer import TrainerDF_CosEmb
 @TRAINER_REGISTRY.register()
-class VPT(TrainerDF):
+class VPT_CosEmb(TrainerDF_CosEmb):
 
     def check_cfg(self, cfg):
         assert cfg.TRAINER.VPT.PREC in ["fp16", "fp32", "amp"]

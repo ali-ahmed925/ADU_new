@@ -100,6 +100,20 @@ class FixedEmbeddings():
     def return_fixed_embeddings(self):
         return self.fixed_embeddings
 
+class Adapter(nn.Module):
+    def __init__(self, c_in, dtype, reduction=4):
+        super(Adapter, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(c_in, c_in // reduction, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True),
+            nn.Linear(c_in // reduction, c_in, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True)
+        )
+        self.dtype = dtype
+
+    def forward(self, x):
+        x = self.fc(x)
+        return x.type(self.dtype)
 
 class CustomCLIP(nn.Module):
     def __init__(self, cfg, classnames, clip_model):
@@ -110,11 +124,15 @@ class CustomCLIP(nn.Module):
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
 
+        self.domain_separate_module = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+
     def forward(self, image, label=None, training=False):
         logit_scale = self.logit_scale.exp()
 
         text_features = self.embeddings.return_fixed_embeddings().cuda()
         image_features = self.image_encoder(image.type(self.dtype))
+
+        image_features = self.domain_separate_module(image_features)
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
@@ -127,7 +145,7 @@ class CustomCLIP(nn.Module):
 
 
 @TRAINER_REGISTRY.register()
-class VPT(TrainerDF):
+class VPT_w_Adapter(TrainerDF):
 
     def check_cfg(self, cfg):
         assert cfg.TRAINER.VPT.PREC in ["fp16", "fp32", "amp"]
@@ -153,6 +171,8 @@ class VPT(TrainerDF):
             if name_to_update not in name:
                 # Make sure that VPT prompts are updated
                 if "VPT" in name:
+                    param.requires_grad_(True)
+                elif "domain" in name:
                     param.requires_grad_(True)
                 else:
                     param.requires_grad_(False)

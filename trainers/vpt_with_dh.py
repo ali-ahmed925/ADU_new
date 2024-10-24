@@ -99,6 +99,36 @@ class FixedEmbeddings():
 
     def return_fixed_embeddings(self):
         return self.fixed_embeddings
+    
+
+class Adapter(nn.Module):
+    def __init__(self, c_in, dtype, reduction=4):
+        super(Adapter, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(c_in, c_in // reduction, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True),
+            nn.Linear(c_in // reduction, c_in, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True)
+        )
+        self.dtype = dtype
+
+    def forward(self, x):
+        x = self.fc(x)
+        return x.type(self.dtype)
+
+class DomainCLIP(nn.Module):
+    def __init__(self, domain_num, clip_model):
+        super(DomainCLIP, self).__init__()
+        self.image_encoder = clip_model.visual
+        self.domain_separate_module = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+        self.domain_classifier.to(clip_model.dtype)
+        self.dtype = clip_model.dtype
+    
+    def forward(self, image):
+        image_feature = self.image_encoder(image.type(self.dtype))
+        domain_feature = self.domain_separate_module(image_feature)
+        return self.domain_classifier(domain_feature), domain_feature
 
 
 class CustomCLIP(nn.Module):
@@ -109,12 +139,19 @@ class CustomCLIP(nn.Module):
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
+        self.domain_separate_module = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+        self.domain_classifier.to(self.dtype)
 
     def forward(self, image, label=None, training=False):
         logit_scale = self.logit_scale.exp()
 
         text_features = self.embeddings.return_fixed_embeddings().cuda()
         image_features = self.image_encoder(image.type(self.dtype))
+        
+
+        image_features = self.domain_separate_module(image_features)
+        domain_logit = self.domain_classifier(image_features)
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
@@ -123,11 +160,11 @@ class CustomCLIP(nn.Module):
         # if training:
         #     return F.cross_entropy(logits, label)
 
-        return logits, image_features, text_features
+        return logits, image_features, text_features, domain_logit
 
-
+from engine.trainer import TrainerDF_COPY
 @TRAINER_REGISTRY.register()
-class VPT(TrainerDF):
+class VPT_w_DH(TrainerDF_COPY):
 
     def check_cfg(self, cfg):
         assert cfg.TRAINER.VPT.PREC in ["fp16", "fp32", "amp"]
@@ -154,7 +191,14 @@ class VPT(TrainerDF):
                 # Make sure that VPT prompts are updated
                 if "VPT" in name:
                     param.requires_grad_(True)
-                else:
+                    print(name)
+                elif "domain_separate_module" in name:
+                    param.requires_grad_(True)
+                    print(name)
+                elif "domain_classifier" in name:
+                    param.requires_grad_(True)
+                    print(name)
+                else :
                     param.requires_grad_(False)
 
         # Double check

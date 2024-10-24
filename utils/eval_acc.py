@@ -1,52 +1,6 @@
 import torch
 from dassl.metrics.accuracy import compute_accuracy
-# def compute_prv_del_accuracy(output, target, prv_mask, del_mask, topk=(1, )):
-#     """Computes the accuracy over the k top predictions for
-#     the specified values of k.
 
-#     Args:
-#         output (torch.Tensor): prediction matrix with shape (batch_size, num_classes).
-#         target (torch.LongTensor): ground truth labels with shape (batch_size).
-#         topk (tuple, optional): accuracy at top-k will be computed. For example,
-#             topk=(1, 5) means accuracy at top-1 and top-5 will be computed.
-
-#     Returns:
-#         list: accuracy at top-k.
-#     """
-#     maxk = max(topk)
-#     batch_size = target.size(0)
-
-#     if isinstance(output, (tuple, list)):
-#         output = output[0]
-
-#     _, pred = output.topk(maxk, 1, True, True)
-#     pred = pred.t()
-#     false_check_tensor = torch.zeros_like(prv_mask, dtype=torch.bool)
-#     if torch.equal(false_check_tensor, prv_mask):
-#         correct_prv = pred[prv_mask].eq(target[prv_mask].view(1, -1).expand_as(pred[prv_mask]))
-#     else :
-#         correct_prv = -1
-#     if torch.equal(false_check_tensor, del_mask):
-#         correct_del = pred[del_mask].eq(target[del_mask].view(1, -1).expand_as(pred[del_mask]))
-#     else :
-#         correct_del = -1
-#     res_prv = []
-#     res_del = []
-#     for k in topk:
-#         if correct_prv != -1:
-#             correct_k = correct_prv[:k].view(-1).float().sum(0, keepdim=True)
-#             acc = correct_k.mul_(100.0 / batch_size)
-#             res_prv.append(acc)
-#         else :
-#             res_prv.append(correct_prv)
-#         if correct_del != -1:
-#             correct_k = correct_del[:k].view(-1).float().sum(0, keepdim=True)
-#             acc = correct_k.mul_(100.0 / batch_size)
-#             res_del.append(acc)
-#         else :
-#             res_del.append(correct_del)
-
-#     return res_prv, res_del
 import numpy as np
 import os.path as osp
 from collections import OrderedDict, defaultdict

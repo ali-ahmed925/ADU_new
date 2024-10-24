@@ -4,7 +4,7 @@
 export CUDA_VISIBLE_DEVICES=$1
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
-TRAINER=CoOp
+TRAINER=CoOp_w_Adapter
 
 DATASET=$2 # ex.) office_home_df
 CFG=$3  # config file
@@ -27,8 +27,8 @@ TODAY=$(date +"%Y%m%d_%H%M%S")
 
 for SEED in 1
 do
-    # DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}/${TODAY}
-    DIR=./test/${TODAY}
+    DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}/${TODAY}
+    # DIR=./test/${TODAY}
     if [ -d "$DIR" ]; then
         echo "Results are available in ${DIR}. Skip this job"
     else
