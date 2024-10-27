@@ -578,7 +578,7 @@ class Transformer(nn.Module):
                 *[ResidualAttentionBlock_MaPLe(width, heads, attn_mask, design_details, text_layer, i)
                   for i in range(layers)])
         elif "Local" in current_trainer :
-            if current_trainer == "VPT_Local":
+            if "VPT_Local" in current_trainer:
                 self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
                                                                          text_layer, i,
                                                                          design_details) if prompts_needed > i

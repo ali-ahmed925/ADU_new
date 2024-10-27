@@ -615,7 +615,7 @@ class TrainerDF_Local_Distill(TrainerDF_Local):
                     output_local = local_feat[del_domain_mask].view(batch_size_del*num_of_local_feature, -1)
                     output_local_expert = local_feat_expert[del_domain_mask].view(batch_size_del*num_of_local_feature, -1)
                     loss_del = entropy(output[del_domain_mask])
-                    loss_del_local = entropy_local_topk_distilled(output_local, output_local_expert, label[del_domain_mask], num_of_local_feature)
+                    loss_del_local = entropy_local_topk_distilled(output_local, output_local_expert, label[del_domain_mask], num_of_local_feature, top_k=self.cfg.TOPK)
                 loss = loss_prv - loss_del - loss_del_local
             else :
                 # print(type(output))

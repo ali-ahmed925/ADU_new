@@ -153,7 +153,7 @@ class CustomCLIP(nn.Module):
 from engine.trainer import TrainerDF_Local, TrainerDF_Local_Distill
 
 @TRAINER_REGISTRY.register()
-class VPT_Local_Distill(TrainerDF_Local):
+class VPT_Local_Distill(TrainerDF_Local_Distill):
 
     def check_cfg(self, cfg):
         assert cfg.TRAINER.VPT.PREC in ["fp16", "fp32", "amp"]

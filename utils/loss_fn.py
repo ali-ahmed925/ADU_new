@@ -35,9 +35,13 @@ def entropy_local_topk_distilled(local_out, local_out_expert, label, num_of_loca
     Extract non-Top-K regions and calculate entropy.
     """
     label_repeat = label.repeat_interleave(num_of_local_feature)
+
     local_out_expert = F.softmax(local_out_expert, dim=-1)
+    local_out = F.softmax(local_out, dim=-1)
+
     pred_topk = torch.topk(local_out_expert, k=top_k, dim=1)[1]
     contains_label = pred_topk.eq(torch.tensor(label_repeat).unsqueeze(1)).any(dim=1)
+
     selected_p = local_out[contains_label]
     if selected_p.shape[0] == 0:
         return torch.tensor([0]).cuda()

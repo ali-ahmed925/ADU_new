@@ -118,6 +118,8 @@ def extend_cfg(cfg, args):
         cfg.DATASET.FORGETDOMAINS = args.forget_domains
         # print(cfg.DATASET.FORGETDOMAINS)
     
+    cfg.TOPK = args.topk
+
     cfg.NO_FORGET = args.no_forget
     cfg.EVAL_ONLY = args.eval_only
 
@@ -296,6 +298,13 @@ if __name__ == "__main__":
         default=[],
         nargs="*",
         help="input forget domains like '--forget_domains domain1 domain2 ..' "
+    )
+
+    parser.add_argument(
+        "--topk",
+        default=3,
+        type=int,
+        help="select local feat topk "
     )
     
     parser.add_argument(
