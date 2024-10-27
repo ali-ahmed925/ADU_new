@@ -5,9 +5,9 @@ from dassl.engine import TRAINER_REGISTRY, TrainerX
 from dassl.optim import build_optimizer, build_lr_scheduler
 
 from clip import clip
-from clip.model import convert_weights
+from clip.model import convert_weights, get_similarity_map
 
-from .coop import load_clip_to_cpu
+# from .coop import load_clip_to_cpu
 from .imagenet_templates import IMAGENET_TEMPLATES, IMAGENET_TEMPLATES_SELECT
 from tqdm import tqdm
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
@@ -15,6 +15,9 @@ from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 import cv2
 from PIL import Image
 import matplotlib.pyplot as plt
+import numpy as np
+
+import os
 
 CUSTOM_TEMPLATES = {
     "OxfordPets": "a photo of a {}, a type of pet.",
@@ -46,8 +49,30 @@ from dassl.utils import (
 import os.path as osp
 import time
 from engine.trainer import TrainerDF
+
+def load_clip_to_cpu(cfg):
+    backbone_name = cfg.MODEL.BACKBONE.NAME
+    url = clip._MODELS[backbone_name]
+    model_path = clip._download(url)
+
+    try:
+        # loading JIT archive
+        model = torch.jit.load(model_path, map_location="cpu").eval()
+        state_dict = None
+
+    except RuntimeError:
+        state_dict = torch.load(model_path, map_location="cpu")
+    design_details = {"trainer": 'ZeroshotCLIP_Local',
+                      "vision_depth": 0,
+                      "language_depth": 0, "vision_ctx": 0,
+                      "language_ctx": 0}
+    model = clip.build_model(state_dict or model.state_dict(), design_details)
+
+    return model
+
+
 @TRAINER_REGISTRY.register()
-class ZeroshotCLIP(TrainerDF):
+class ZeroshotCLIP_Local(TrainerDF):
     def __init__(self, cfg):
         super().__init__(cfg)
 
@@ -57,6 +82,7 @@ class ZeroshotCLIP(TrainerDF):
 
         print(f"Loading CLIP (backbone: {cfg.MODEL.BACKBONE.NAME})")
         clip_model = load_clip_to_cpu(cfg)
+        # clip_model = clip.build_model(clip_model.state_dict())
         clip_model.to(self.device)
 
         temp = CUSTOM_TEMPLATES[cfg.DATASET.NAME]
@@ -73,22 +99,23 @@ class ZeroshotCLIP(TrainerDF):
         self.clip_model = clip_model
 
     def model_inference(self, image):
-        image_features = self.clip_model.encode_image(image)
+        image_features, local_features = self.clip_model.encode_image(image)
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         logit_scale = self.clip_model.logit_scale.exp()
         logits = logit_scale * image_features @ self.text_features.t()
-        return logits, image_features, self.text_features
+        return logits, image_features, local_features ,self.text_features
 
     def parse_batch_test(self, batch):
         input = batch["img"]
         label = batch["label"]
         domain = batch["domain"]
+        impath = batch["impath"]
 
         input = input.to(self.device)
         label = label.to(self.device)
         domain = domain.to(self.device)
 
-        return input, label, domain
+        return input, label, domain, impath
     
     def set_tensorboard(self):
         if not self.cfg.EVAL_ONLY:
@@ -127,8 +154,8 @@ class ZeroshotCLIP(TrainerDF):
         print(f"Evaluate on the *{split}* set")
         eval_dict = {}
         for batch_idx, batch in enumerate(tqdm(data_loader)):
-            input, label, domain = self.parse_batch_test(batch)
-            output, img_feat, txt_feat = self.model_inference(input)
+            input, label, domain, impath = self.parse_batch_test(batch)
+            output, img_feat, local_feat, txt_feat = self.model_inference(input)
             self.evaluator.process(output, label)
 
             # for prv_domain in prv_domain_list:
@@ -161,20 +188,37 @@ class ZeroshotCLIP(TrainerDF):
                 # input_all = torch.cat((input_all, input))
             
             img_np = input.cpu().numpy()
-            cv2_img = cv2.cvtColor (img_np, cv2.COLOR_RGB2BGR)
+            # img_np = np.transpose(img_np, (0, 2, 3, 1))
+            RGB_img = np.transpose(img_np, (0, 2, 3, 1))*255
+            cv2_img = cv2.cvtColor (RGB_img.astype('uint8'), cv2.COLOR_RGB2BGR)
             
-
-            features = img_feat @ txt_feat.t()
-            similarity_map = clip.get_similarity_map(features[:,1:, :], cv2_img.shape[:2])
-
+            # root="/nas/data/gotoyuta/Dataset/pacs/images/"
+            features = local_feat @ txt_feat.t()
+            similarity_map = get_similarity_map(features[:,:, :], img_np.shape[2:])
+            save_parent_dir = "/nas/data/gotoyuta/Result_Domain_Forgetting/samples/pacs/"
             for b in range(similarity_map.shape[0]):
-                for n in range(similarity_map.shape[-1]):
-                    vis = (similarity_map[b, :, :, n].cpu().numpy() * 255).astype('uint8')
-                    vis = cv2.applyColorMap(vis, cv2.COLORMAP_JET)
-                    vis = cv2_img * 0.4 + vis * 0.6
-                    vis = cv2.cvtColor(vis.astype('uint8'), cv2.COLOR_BGR2RGB)
-                    print('CLIP:', self.classnames[n])
-                    plt.imsave(f"{self.classnames[n]}.png", vis)
+                filename=os.path.basename(impath[b])
+                filename_only, _ = os.path.splitext(filename)
+                tmp_save_dir = save_parent_dir + "/" + self.domain_list[domain[b].item()] + "/" + self.classnames[label[b].item()] + "/"
+                os.makedirs(tmp_save_dir, exist_ok=True)
+                predicted = torch.argmax(output[b]).item()
+                if predicted == label[b].item():
+                    save_dir = tmp_save_dir + "/True/" + filename_only + "/"
+                    os.makedirs(save_dir, exist_ok=True)
+                else :
+                    save_dir = tmp_save_dir + "/False/" + filename_only + "/"
+                    os.makedirs(save_dir, exist_ok=True)
+                img_cv2 = cv2.imread(impath[b])
+                img_cv2 = resize_and_center_crop(img_cv2, 224)
+                plt.imsave(save_dir + "org.png", cv2.cvtColor(img_cv2.astype('uint8'), cv2.COLOR_BGR2RGB))
+                # for n in range(similarity_map.shape[-1]):
+                n = label[b].item()
+                vis = (similarity_map[b, :, :, n].cpu().numpy() * 255).astype('uint8')
+                vis = cv2.applyColorMap(vis, cv2.COLORMAP_JET)
+                vis = img_cv2 * 0.7 + vis * 0.3
+                vis = cv2.cvtColor(vis.astype('uint8'), cv2.COLOR_BGR2RGB)
+                # vis = vis.astype('uint8')
+                plt.imsave(save_dir +f"gt{label[b].item()}_predicted{predicted}.png" , vis)
 
 
         # meta_data_cls_agno = []
@@ -187,7 +231,6 @@ class ZeroshotCLIP(TrainerDF):
         #     #     meta_data_cls_agno.append(f"{lbl.item()}\t{dlbl.item()}")
         #     # else:
         #     meta_data_cls_agno.append([f"{lbl.item()}", f"{self.domain_list[dlbl.item()]}"])
-
         # self.write_embedding(img_feat_all, meta_data_cls_agno, tag=tag, metadata_header=["Object_Class", "Domain_Class"])
 
         for cls_id, clsname in enumerate(self.classnames):
@@ -227,3 +270,29 @@ class ZeroshotCLIP(TrainerDF):
             pass
         else:
             self._writer.add_embedding(mat, meta_data, label_img, global_step, tag, metadata_header=metadata_header)
+
+
+
+def resize_and_center_crop(image, target_size=224):
+    # 元の画像の高さと幅を取得
+    height, width = image.shape[:2]
+    
+    # 短い辺をターゲットサイズにリサイズ
+    if width < height:
+        new_width = target_size
+        new_height = int(target_size * (height / width))
+    else:
+        new_height = target_size
+        new_width = int(target_size * (width / height))
+    
+    # リサイズ処理
+    resized_image = cv2.resize(image, (new_width, new_height))
+
+    # 中央クロップのためのオフセットを計算
+    top = (new_height - target_size) // 2
+    left = (new_width - target_size) // 2
+    
+    # 中央クロップ処理
+    cropped_image = resized_image[top:top + target_size, left:left + target_size]
+
+    return cropped_image
