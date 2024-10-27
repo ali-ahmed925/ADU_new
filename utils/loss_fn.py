@@ -16,6 +16,32 @@ import math
 #   entropy = torch.sum(prob * torch.log(prob + 1e-5), dim=1)
   
 #   return -torch.mean(entropy) 
+def entropy_local_topk(p, label, num_of_local_feature, top_k=3):
+    """
+    Extract non-Top-K regions and calculate entropy.
+    """
+    label_repeat = label.repeat_interleave(num_of_local_feature)
+    p = F.softmax(p, dim=-1)
+    pred_topk = torch.topk(p, k=top_k, dim=1)[1]
+    contains_label = pred_topk.eq(torch.tensor(label_repeat).unsqueeze(1)).any(dim=1)
+    selected_p = p[contains_label]
+    if selected_p.shape[0] == 0:
+        return torch.tensor([0]).cuda()
+    return -torch.mean(torch.sum(selected_p * torch.log(selected_p + 1e-5), 1))
+
+    # return -torch.mean(torch.sum(selected_p * torch.log(selected_p+1e-5), 1))
+def entropy_local_topk_distilled(local_out, local_out_expert, label, num_of_local_feature, top_k=3):
+    """
+    Extract non-Top-K regions and calculate entropy.
+    """
+    label_repeat = label.repeat_interleave(num_of_local_feature)
+    local_out_expert = F.softmax(local_out_expert, dim=-1)
+    pred_topk = torch.topk(local_out_expert, k=top_k, dim=1)[1]
+    contains_label = pred_topk.eq(torch.tensor(label_repeat).unsqueeze(1)).any(dim=1)
+    selected_p = local_out[contains_label]
+    if selected_p.shape[0] == 0:
+        return torch.tensor([0]).cuda()
+    return -torch.mean(torch.sum(selected_p * torch.log(selected_p + 1e-5), 1))
 
 
 def cossine_embedding_loss(input, domain_label, label):
