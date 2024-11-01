@@ -30,7 +30,7 @@ cd ../../
 #   done
 #   # コマンドを実行
 #   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
-#   bash scripts/vpt_local_distill/main.sh 1 pacs_df 1 vit_b16_ep50 8 9 3 $selected_domains_str
+#   bash scripts/vpt_local_with_dc/main.sh 3 pacs_df 1 vit_b16_ep50 8 9 3 $selected_domains_str
 #   # echo "${selected_domains[@]}"
 # done
 
@@ -45,8 +45,8 @@ for ((i = 1; i < 15; i++)); do
   done
   # コマンドを実行
   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
-  bash scripts/vpt_local_distill/main.sh 1 office_home_df 1 vit_b16_ep50 8 9 25 $selected_domains_str
-  bash scripts/vpt_local/main.sh 1 office_home_df 1 vit_b16_ep50 8 9 25 $selected_domains_str
+  bash scripts/vpt_local_with_dc/main.sh 2 office_home_df 1 vit_b16_ep50 8 9 25 $selected_domains_str
+  # bash scripts/vpt_local/main.sh 1 office_home_df 1 vit_b16_ep50 8 9 25 $selected_domains_str
   # echo "${selected_domains[@]}"
 done
 # domains=("art" "clipart" "product" "real_world")

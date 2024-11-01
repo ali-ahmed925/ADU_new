@@ -49,6 +49,9 @@ import trainers.vpt_cosemb
 import trainers.zsclip_local
 import trainers.vpt_local
 import trainers.vpt_local_ditill
+import trainers.vpt_local_with_dc_divided
+import trainers.vpt_local_with_dc
+
 
 def print_args(args, cfg):
     print("***************")
