@@ -19,7 +19,7 @@ DOMAIN_SEC=$(IFS=-; echo "${DOMAIN_LIST[*]}")
 DOMAIN_COUNT=${#DOMAIN_LIST[@]}
 TODAY=$(date +"%Y%m%d_%H%M%S")
 
-DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx-vision${NCTX}_prmpt-depth${DEPTH_VISION}/seed${SEED}/${TODAY}
+DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx-vision${NCTX}_prmpt-depth${DEPTH_VISION}_topk${TOPK}/seed${SEED}/${TODAY}
 if [ -d "$DIR" ]; then
     echo "Results are available in ${DIR}."
 else
