@@ -121,6 +121,9 @@ def extend_cfg(cfg, args):
         cfg.DATASET.FORGETDOMAINS = args.forget_domains
         # print(cfg.DATASET.FORGETDOMAINS)
     
+    cfg.BLOCK_SHUFFLE = args.is_block_shuffle
+    cfg.GRID = args.grid_num
+    
     cfg.TOPK = args.topk
 
     cfg.NO_FORGET = args.no_forget
@@ -293,8 +296,16 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no_forget", action="store_true", help="ON/OFF domain forgetting mode"
+        "--no_forget", action="store_true", help="ON/OFF domain forgetting mode default = False"
     )
+
+    parser.add_argument(
+        "--is_block_shuffle", action="store_false", help="ON/OFF either block shuffled or not"
+    )
+    parser.add_argument(
+        "--grid_num", type=int, help="select grid number 1 < grid_num < 224 ??", default=8
+    )
+
 
     parser.add_argument(
         "--forget_domains",

@@ -12,11 +12,11 @@ cd ../../
 #   done
 #   # コマンドを実行
 #   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
-#   bash scripts/vpt/main.sh 1 domainnet_df 1 vit_b16_ep50 8 9 $selected_domains_str
-#   # bash scripts/vpt_with_dc/main.sh 1 domainnet_df 1 vit_b16_ep50 8 9 $selected_domains_str
-#   # bash scripts/vpt_with_dc/main.sh 1 domainnet_df 1 vit_b16_ep50 8 9 $selected_domains_str
-#   # bash scripts/vpt_with_dc/main.sh 1 domainnet_df 1 vit_b16_ep50 8 9 $selected_domains_str
-#   # echo "${selected_domains[@]}"
+#   bash scripts/coop_w_dh/main.sh 1 domainnet_df 1 vit_b16_ep50 8 9 $selected_domains_str
+#   bash scripts/coop_with_adapter/main.sh 1 domainnet_df 1 vit_b16_ep50 8 9 $selected_domains_str
+  # bash scripts/vpt_with_dc/main.sh 1 domainnet_df 1 vit_b16_ep50 8 9 $selected_domains_str
+  # bash scripts/vpt_with_dc/main.sh 1 domainnet_df 1 vit_b16_ep50 8 9 $selected_domains_str
+  # echo "${selected_domains[@]}"
 # done
 
 # domains=("cartoon" "art_painting" "sketch" "photo")

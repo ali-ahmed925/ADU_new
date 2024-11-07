@@ -7,7 +7,7 @@ def get_jigsaw_tensor(im_batch, grid, device, is_gaussian_blur=True):
 # Ensure the input tensor is on the CPU
     # device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     im_batch = im_batch.to(device)
-
+    gaussian = GaussianBlur((5, 9), (10, 30))
     # Container for all the jigsawed tensors
     jigsawed_tensors = []
 
@@ -40,7 +40,6 @@ def get_jigsaw_tensor(im_batch, grid, device, is_gaussian_blur=True):
             rows.append(row)
         jigsaw_tensor = torch.cat(rows, dim=1)
         if is_gaussian_blur:
-            gaussian = GaussianBlur((5, 9), (10, 30))
             jigsaw_tensor = gaussian(jigsaw_tensor)
 
         jigsawed_tensors.append(jigsaw_tensor)

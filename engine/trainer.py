@@ -649,7 +649,7 @@ class TrainerDF_Local_Distill(TrainerDF_Local):
             self.update_lr()
 
         return loss_summary
-
+from utils.data_augmentation import get_jigsaw_tensor
 class TrainerDF_Local_DC_Divided(TrainerDF_Local):
     def __init__(self, cfg):
         super().__init__(cfg)
@@ -687,6 +687,10 @@ class TrainerDF_Local_DC_Divided(TrainerDF_Local):
             self.scaler.update()
         else:
             output, img_feat, local_feat, txt_feat, domain_logit = self.model(image)
+
+            if self.cfg.BLOCK_SHUFFLE:
+                shuffled_image = get_jigsaw_tensor(image, grid=self.cfg.GRID, device=self.device)
+                _, _, _, _, domain_logit = self.model(shuffled_image)
             if not self.cfg.NO_FORGET:
                 entropy = Entropy()
                 false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
