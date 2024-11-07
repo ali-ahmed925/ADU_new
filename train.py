@@ -52,6 +52,8 @@ import trainers.vpt_local_ditill
 import trainers.vpt_local_with_dc_divided
 import trainers.vpt_local_with_dc
 
+import trainers.coop_with_dh_divided
+
 
 def print_args(args, cfg):
     print("***************")
