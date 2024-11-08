@@ -265,7 +265,7 @@ class CustomCLIP(nn.Module):
 
         return logits, image_features, text_features# , domain_logit
 
-from engine.trainer import TrainerDF_COPY
+# from engine.trainer import TrainerDF_COPY
 @TRAINER_REGISTRY.register()
 class CoOp_w_Adapter(TrainerDF):
     """Context Optimization (CoOp).

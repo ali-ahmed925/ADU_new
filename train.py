@@ -26,6 +26,7 @@ import datasets.imagenet_sketch
 import datasets.imagenetv2
 import datasets.imagenet_a
 import datasets.imagenet_r
+import datasets.domainnet_mini_df
 
 import trainers.coop
 import trainers.cocoop

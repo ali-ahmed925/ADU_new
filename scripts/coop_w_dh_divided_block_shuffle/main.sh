@@ -12,11 +12,11 @@ CTP=$4  # class token position (end or middle or front)
 NCTX=$5  # number of context tokens
 # SHOTS=$5  # number of shots (1, 2, 4, 8, 16)
 CSC=$6 # class-specific context (False or True)
-
-# ROOT_DIR=$7 # 
 GRID_NUM=$7
+# ROOT_DIR=$7 # 
+
 # 7番目以降の引数をアンダースコアでつなげる
-DOMAIN_LIST=("${@:7}")
+DOMAIN_LIST=("${@:8}")
 # DOMAIN_LIST=${@:7:($# - 6)}
 DOMAIN_SEC=$(IFS=-; echo "${DOMAIN_LIST[*]}")
 
@@ -27,7 +27,7 @@ TODAY=$(date +"%Y%m%d_%H%M%S")
 
 for SEED in 1
 do
-    DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}/${TODAY}
+    DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}_gridnum${GRID_NUM}/seed${SEED}/${TODAY}
     # DIR=./test/${TODAY}
     if [ -d "$DIR" ]; then
         echo "Results are available in ${DIR}. Skip this job"
@@ -40,6 +40,8 @@ do
         --config-file configs/trainers/CoOp/${CFG}.yaml \
         --dataset-config-file configs/datasets/${DATASET}.yaml \
         --forget_domains "${DOMAIN_LIST[@]}" \
+        --is_block_shuffle \
+        --grid_num $GRID_NUM \
         --output-dir ${DIR} \
         TRAINER.COOP.N_CTX ${NCTX} \
         TRAINER.COOP.CSC ${CSC} \

@@ -12,8 +12,8 @@ for ((i = 1; i < 15; i++)); do
   # コマンドを実行
   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
   bash scripts/coop_w_dh_divided/main.sh 2 pacs_df vit_b16_ep50 end 8 False $selected_domains_str 
-  bash scripts/coop_w_dh_divided_block_shuffle/main.sh 2 pacs_df vit_b16_ep50 end 8 False 8 $selected_domains_str 
-  bash scripts/coop_w_dh_block_shuffle/main.sh 2 pacs_df vit_b16_ep50 end 8 False 8 $selected_domains_str 
+  bash scripts/coop_w_dh_divided_block_shuffled/main.sh 2 pacs_df vit_b16_ep50 end 8 False $selected_domains_str 
+  bash scripts/coop_w_dh_block_shuffled/main.sh 2 pacs_df vit_b16_ep50 end 8 False $selected_domains_str 
   # echo "${selected_domains[@]}"
 done
 domains=("art" "clipart" "product" "real_world")
@@ -28,7 +28,7 @@ for ((i = 1; i < 15; i++)); do
   # コマンドを実行
   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
   bash scripts/coop_w_dh_divided/main.sh 2 office_home_df vit_b16_ep50 end 8 False $selected_domains_str 
-  bash scripts/coop_w_dh_divided_block_shuffle/main.sh 2 office_home_df vit_b16_ep50 end 8 False 8 $selected_domains_str 
-  bash scripts/coop_w_dh_block_shuffle/main.sh 2 office_home_df vit_b16_ep50 end 8 False 8 $selected_domains_str 
+  bash scripts/coop_w_dh_divided_block_shuffle/main.sh 2 office_home_df vit_b16_ep50 end 8 False $selected_domains_str 
+  bash scripts/coop_w_dh_block_shuffle/main.sh 2 office_home_df vit_b16_ep50 end 8 False $selected_domains_str 
   # echo "${selected_domains[@]}"
 done

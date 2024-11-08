@@ -264,9 +264,9 @@ class CustomCLIP(nn.Module):
 
         return logits, image_features, text_features, domain_logit
 
-from engine.trainer import TrainerDF_COPY
+from engine.trainer import TrainerDF_DC_Divided
 @TRAINER_REGISTRY.register()
-class CoOp_w_DH_Divided(TrainerDF_COPY):
+class CoOp_w_DH_Divided(TrainerDF_DC_Divided):
     """Context Optimization (CoOp).
 
     Learning to Prompt for Vision-Language Models
