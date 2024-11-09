@@ -127,7 +127,7 @@ class CustomCLIP(nn.Module):
 
 
 @TRAINER_REGISTRY.register()
-class VPT_w_NLL(TrainerDF_NNL):
+class VPT_w_NNL(TrainerDF_NNL):
 
     def check_cfg(self, cfg):
         assert cfg.TRAINER.VPT.PREC in ["fp16", "fp32", "amp"]

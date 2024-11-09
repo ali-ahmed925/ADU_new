@@ -4,7 +4,7 @@ export CUDA_VISIBLE_DEVICES=$1
 
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
-TRAINER=VPT_w_NLL
+TRAINER=VPT_w_NNL
 
 DATASET=$2
 SEED=$3
