@@ -216,7 +216,7 @@ class DomainCLIP(nn.Module):
         super(DomainCLIP, self).__init__()
         self.image_encoder = clip_model.visual
         self.domain_separate_module = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
         self.domain_classifier.to(clip_model.dtype)
         self.dtype = clip_model.dtype
     
@@ -236,7 +236,7 @@ class CustomCLIP(nn.Module):
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
         self.domain_separate_module = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
         self.domain_classifier.to(self.dtype)
         # is_adapter = True
         # self.is_adapter = is_adapter
@@ -252,7 +252,6 @@ class CustomCLIP(nn.Module):
 
         image_features = self.domain_separate_module(image_features)
 
-
         domain_logit = self.domain_classifier(image_features)
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
@@ -265,9 +264,9 @@ class CustomCLIP(nn.Module):
 
         return logits, image_features, text_features, domain_logit
 
-from engine.trainer import TrainerDF_DC
+from engine.trainer import TrainerDF_DC_Divided
 @TRAINER_REGISTRY.register()
-class CoOp_w_DH(TrainerDF_DC):
+class CoOp_w_DH_Divided(TrainerDF_DC_Divided):
     """Context Optimization (CoOp).
 
     Learning to Prompt for Vision-Language Models

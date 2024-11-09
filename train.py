@@ -26,6 +26,7 @@ import datasets.imagenet_sketch
 import datasets.imagenetv2
 import datasets.imagenet_a
 import datasets.imagenet_r
+import datasets.domainnet_mini_df
 
 import trainers.coop
 import trainers.cocoop
@@ -45,6 +46,15 @@ import trainers.vpt_with_dh
 import trainers.vpt_with_adapter
 import trainers.vpt_with_dc
 import trainers.vpt_cosemb
+
+import trainers.zsclip_local
+import trainers.vpt_local
+import trainers.vpt_local_ditill
+import trainers.vpt_local_with_dc_divided
+import trainers.vpt_local_with_dc
+
+import trainers.coop_with_dh_divided
+
 
 def print_args(args, cfg):
     print("***************")
@@ -114,6 +124,11 @@ def extend_cfg(cfg, args):
         cfg.DATASET.FORGETDOMAINS = args.forget_domains
         # print(cfg.DATASET.FORGETDOMAINS)
     
+    cfg.BLOCK_SHUFFLE = args.is_block_shuffle
+    cfg.GRID = args.grid_num
+    
+    cfg.TOPK = args.topk
+
     cfg.NO_FORGET = args.no_forget
     cfg.EVAL_ONLY = args.eval_only
 
@@ -284,14 +299,29 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no_forget", action="store_true", help="ON/OFF domain forgetting mode"
+        "--no_forget", action="store_true", help="ON/OFF domain forgetting mode default = False"
     )
+
+    parser.add_argument(
+        "--is_block_shuffle", action="store_false", help="ON/OFF either block shuffled or not"
+    )
+    parser.add_argument(
+        "--grid_num", type=int, help="select grid number 1 < grid_num < 224 ??", default=8
+    )
+
 
     parser.add_argument(
         "--forget_domains",
         default=[],
         nargs="*",
         help="input forget domains like '--forget_domains domain1 domain2 ..' "
+    )
+
+    parser.add_argument(
+        "--topk",
+        default=3,
+        type=int,
+        help="select local feat topk "
     )
     
     parser.add_argument(

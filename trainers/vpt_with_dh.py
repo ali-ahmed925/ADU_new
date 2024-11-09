@@ -162,9 +162,9 @@ class CustomCLIP(nn.Module):
 
         return logits, image_features, text_features, domain_logit
 
-from engine.trainer import TrainerDF_COPY
+from engine.trainer import TrainerDF_DC
 @TRAINER_REGISTRY.register()
-class VPT_w_DH(TrainerDF_COPY):
+class VPT_w_DH(TrainerDF_DC):
 
     def check_cfg(self, cfg):
         assert cfg.TRAINER.VPT.PREC in ["fp16", "fp32", "amp"]

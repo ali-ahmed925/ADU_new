@@ -26,6 +26,11 @@ import time
 from tqdm import tqdm
 
 from engine.trainer import TrainerDF
+import matplotlib.pyplot as plt
+import os
+import numpy as np
+from clip.model import get_similarity_map
+
 
 _tokenizer = _Tokenizer()
 
@@ -42,7 +47,7 @@ def load_clip_to_cpu(cfg):
 
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
-    design_details = { "trainer": "VPT",
+    design_details = { "trainer": "VPT_Local_w_DC_Divided",
                     "vision_depth": cfg.TRAINER.VPT.PROMPT_DEPTH_VISION,
                       "vision_ctx": cfg.TRAINER.VPT.N_CTX_VISION,
                       "language_depth": 0,
@@ -99,36 +104,6 @@ class FixedEmbeddings():
 
     def return_fixed_embeddings(self):
         return self.fixed_embeddings
-    
-
-class Adapter(nn.Module):
-    def __init__(self, c_in, dtype, reduction=4):
-        super(Adapter, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(c_in, c_in // reduction, bias=False).to(dtype=dtype),
-            nn.ReLU(inplace=True),
-            nn.Linear(c_in // reduction, c_in, bias=False).to(dtype=dtype),
-            nn.ReLU(inplace=True)
-        )
-        self.dtype = dtype
-
-    def forward(self, x):
-        x = self.fc(x)
-        return x.type(self.dtype)
-
-class DomainCLIP(nn.Module):
-    def __init__(self, domain_num, clip_model):
-        super(DomainCLIP, self).__init__()
-        self.image_encoder = clip_model.visual
-        self.domain_separate_module = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
-        self.domain_classifier.to(clip_model.dtype)
-        self.dtype = clip_model.dtype
-    
-    def forward(self, image):
-        image_feature = self.image_encoder(image.type(self.dtype))
-        domain_feature = self.domain_separate_module(image_feature)
-        return self.domain_classifier(domain_feature), domain_feature
 
 
 class CustomCLIP(nn.Module):
@@ -139,18 +114,16 @@ class CustomCLIP(nn.Module):
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
-        # self.domain_separate_module = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+
+        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
         self.domain_classifier.to(self.dtype)
 
     def forward(self, image, label=None, training=False):
         logit_scale = self.logit_scale.exp()
 
         text_features = self.embeddings.return_fixed_embeddings().cuda()
-        image_features = self.image_encoder(image.type(self.dtype))
-        
+        image_features, local_feat = self.image_encoder(image.type(self.dtype))
 
-        # image_features = self.domain_separate_module(image_features)
         domain_logit = self.domain_classifier(image_features)
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
@@ -160,11 +133,11 @@ class CustomCLIP(nn.Module):
         # if training:
         #     return F.cross_entropy(logits, label)
 
-        return logits, image_features, text_features, domain_logit
+        return logits, image_features, local_feat, text_features, domain_logit
 
-from engine.trainer import TrainerDF_DC
+from engine.trainer import TrainerDF_Local, TrainerDF_Local_DC_Divided
 @TRAINER_REGISTRY.register()
-class VPT_w_DC(TrainerDF_DC):
+class VPT_Local_w_DC_Divided(TrainerDF_Local_DC_Divided):
 
     def check_cfg(self, cfg):
         assert cfg.TRAINER.VPT.PREC in ["fp16", "fp32", "amp"]
@@ -191,11 +164,9 @@ class VPT_w_DC(TrainerDF_DC):
                 # Make sure that VPT prompts are updated
                 if "VPT" in name:
                     param.requires_grad_(True)
-                    print(name)
                 elif "domain_classifier" in name:
                     param.requires_grad_(True)
-                    print(name)
-                else :
+                else:
                     param.requires_grad_(False)
 
         # Double check
@@ -256,3 +227,160 @@ class VPT_w_DC(TrainerDF_DC):
             print("Loading weights to {} " 'from "{}" (epoch = {})'.format(name, model_path, epoch))
             # set strict=False
             self._models[name].load_state_dict(state_dict, strict=False)
+
+    # def parse_batch_test(self, batch):
+    #     input = batch["img"]
+    #     label = batch["label"]
+    #     domain = batch["domain"]
+    #     impath = batch["impath"]
+
+    #     input = input.to(self.device)
+    #     label = label.to(self.device)
+    #     domain = domain.to(self.device)
+
+    #     return input, label, domain, impath
+    
+    # @torch.no_grad()
+    # def test(self, split=None):
+    #     """A generic testing pipeline."""
+    #     self.set_tensorboard()
+    #     self.set_model_mode("eval")
+    #     self.evaluator.reset()
+
+    #     if split is None:
+    #         split = self.cfg.TEST.SPLIT
+
+    #     if split == "val" and self.val_loader is not None:
+    #         data_loader = self.val_loader
+    #     else:
+    #         split = "test"  # in case val_loader is None
+    #         data_loader = self.test_loader
+
+    #     print(f"Evaluate on the *{split}* set")
+    #     eval_dict = {}
+    #     for batch_idx, batch in enumerate(tqdm(data_loader)):
+    #         input, label, domain, impath = self.parse_batch_test(batch)
+    #         output, img_feat, local_feat, txt_feat = self.model_inference(input)
+    #         self.evaluator.process(output, label)
+
+    #         # for prv_domain in prv_domain_list:
+    #         prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+    #         prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+    #         # for del_domain in del_domain_list:
+    #         del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+    #         del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+
+    #         eval_dict = compute_acc_for_df_eval(
+    #             eval_dict,
+    #             output,
+    #             label,
+    #             prv_domain_mask,
+    #             del_domain_mask,
+    #             domain,
+    #             self.domain_list,
+    #             self.device
+    #         ) 
+    #         if batch_idx == 0:
+    #             label_all = label
+    #             domain_all = domain
+    #             img_feat_all = img_feat
+    #             # input_all = input
+
+    #         else :
+    #             label_all = torch.cat((label_all, label))
+    #             domain_all = torch.cat((domain_all, domain))
+    #             img_feat_all = torch.cat((img_feat_all, img_feat))
+    #             # input_all = torch.cat((input_all, input))
+        
+            
+
+    #     # for cls_id, clsname in enumerate(self.classnames):
+    #     #     cls_specific_index = (label_all == cls_id)
+    #     #     if torch.all(cls_specific_index == False):
+    #     #         pass
+    #     #     else:
+    #     #         domain_metadata = []
+    #     #         for d in domain_all[cls_specific_index]:
+    #     #             domain_metadata.append(self.domain_list[int(d)])
+    #     #         tag = f"{split}/tsne-plot/{clsname}"
+    #     #         # self.write_embedding(img_feat[cls_specific_index], domain_metadata, input[cls_specific_index], global_step=batch_idx, tag=tag)
+    #     #         self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
+
+    #     results = self.evaluator.evaluate()
+    #     if not self.cfg.NO_FORGET:
+    #         print("==========peservation or delete acc===============")
+    #         for name in ["prv", "del"]:
+    #             acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
+    #             print(f"{name} : {acc:.2f}")
+    #         print("==============domain specific acc=================")
+    #         for domain_name in self.domain_list:
+    #             acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
+    #             print(f"{domain_name} : {acc:.2f}")
+    #         print("===================================================")
+
+    #     # for k, v in results.items():
+    #     #     tag = f"{split}/{k}"
+    #     #     self.write_scalar(tag, v, self.epoch)
+
+    #     return list(results.values())[0]
+    
+# def attnmap_save():
+#     img_np = input.cpu().numpy()
+#     # img_np = np.transpose(img_np, (0, 2, 3, 1))
+#     RGB_img = np.transpose(img_np, (0, 2, 3, 1))*255
+#     cv2_img = cv2.cvtColor (RGB_img.astype('uint8'), cv2.COLOR_RGB2BGR)
+    
+#     # root="/nas/data/gotoyuta/Dataset/pacs/images/"
+#     features = local_feat @ txt_feat.t()
+#     similarity_map = get_similarity_map(features[:,:, :], img_np.shape[2:])
+#     save_parent_dir = "/nas/data/gotoyuta/Result_Domain_Forgetting/samples/pacs_df/vpt/DOMAIN1/photo"
+#     for b in range(similarity_map.shape[0]):
+#         filename=os.path.basename(impath[b])
+#         filename_only, _ = os.path.splitext(filename)
+#         tmp_save_dir = save_parent_dir + "/" + self.domain_list[domain[b].item()] + "/" + self.classnames[label[b].item()] + "/"
+#         os.makedirs(tmp_save_dir, exist_ok=True)
+#         predicted = torch.argmax(output[b]).item()
+#         if predicted == label[b].item():
+#             save_dir = tmp_save_dir + "/True/" + filename_only + "/"
+#             os.makedirs(save_dir, exist_ok=True)
+#         else :
+#             save_dir = tmp_save_dir + "/False/" + filename_only + "/"
+#             os.makedirs(save_dir, exist_ok=True)
+#         img_cv2 = cv2.imread(impath[b])
+#         img_cv2 = resize_and_center_crop(img_cv2, 224)
+#         plt.imsave(save_dir + "org.png", cv2.cvtColor(img_cv2.astype('uint8'), cv2.COLOR_BGR2RGB))
+#         # for n in range(similarity_map.shape[-1]):
+#         n = label[b].item()
+#         vis = (similarity_map[b, :, :, n].cpu().numpy() * 255).astype('uint8')
+#         vis = cv2.applyColorMap(vis, cv2.COLORMAP_JET)
+#         vis = img_cv2 * 0.7 + vis * 0.3
+#         vis = cv2.cvtColor(vis.astype('uint8'), cv2.COLOR_BGR2RGB)
+#         # vis = vis.astype('uint8')
+#         plt.imsave(save_dir +f"gt-{self.classnames[label[b].item()]}_predicted-{self.classnames[predicted]}.png" , vis)
+
+
+import cv2
+    
+def resize_and_center_crop(image, target_size=224):
+    # 元の画像の高さと幅を取得
+    height, width = image.shape[:2]
+    
+    # 短い辺をターゲットサイズにリサイズ
+    if width < height:
+        new_width = target_size
+        new_height = int(target_size * (height / width))
+    else:
+        new_height = target_size
+        new_width = int(target_size * (width / height))
+    
+    # リサイズ処理
+    resized_image = cv2.resize(image, (new_width, new_height))
+
+    # 中央クロップのためのオフセットを計算
+    top = (new_height - target_size) // 2
+    left = (new_width - target_size) // 2
+    
+    # 中央クロップ処理
+    cropped_image = resized_image[top:top + target_size, left:left + target_size]
+
+    return cropped_image

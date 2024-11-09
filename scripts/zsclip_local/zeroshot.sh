@@ -1,0 +1,20 @@
+#!/bin/bash
+
+#cd ../..
+
+# custom config
+DATA="/nas/data/gotoyuta/Dataset/"
+TRAINER=ZeroshotCLIP_Local
+DATASET=$1
+CFG=$2  # rn50, rn101, vit_b32 or vit_b16
+gpuid=$3
+
+CUDA_VISIBLE_DEVICES=${gpuid} python train.py \
+    --root ${DATA} \
+    --trainer ${TRAINER} \
+    --dataset-config-file configs/datasets/${DATASET}.yaml \
+    --config-file configs/trainers/CoOp/${CFG}.yaml \
+    --output-dir output/${TRAINER}/${CFG}/${DATASET} \
+    --eval-only \
+    --no_forget \
+    --forget_domain none
