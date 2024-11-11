@@ -585,6 +585,13 @@ class Transformer(nn.Module):
                                              else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
                                                                               text_layer, i, design_details)
                                              for i in range(layers)])
+            elif "VPT_w_NNL_Local" == current_trainer:
+                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
+                                                                         text_layer, i,
+                                                                         design_details) if prompts_needed > i
+                                             else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
+                                                                              text_layer, i, design_details)
+                                             for i in range(layers)])
             else: 
                 self.resblocks = nn.Sequential(*[ResidualAttentionBlock_Local(width, heads, attn_mask) for _ in range(layers)])
         else:

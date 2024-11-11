@@ -302,6 +302,11 @@ class TrainerDF_Local(SimpleTrainer):
             self.domain_list = [
                 "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
             ]
+        elif cfg.DATASET.NAME == "DomainNetMiniDF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
+            self.domain_list = [
+                "clipart", "painting", "real", "sketch"
+            ]
     
         elif cfg.DATASET.NAME == "PACSDF":
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
@@ -535,11 +540,11 @@ class TrainerDF_Local(SimpleTrainer):
             print("==========peservation or delete acc===============")
             for name in ["prv", "del"]:
                 acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
-                print(f"{name} : {acc:.2f}")
+                print(f"{name} : {acc:.5f}")
             print("==============domain specific acc=================")
             for domain_name in self.domain_list:
                 acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
-                print(f"{domain_name} : {acc:.2f}")
+                print(f"{domain_name} : {acc:.5f}")
             print("===================================================")
 
         for k, v in results.items():
@@ -849,6 +854,11 @@ class TrainerDF_Local_DC(TrainerDF_Local):
             self.domain_list = [
                 "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
             ]
+        elif cfg.DATASET.NAME == "DomainNetMiniDF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
+            self.domain_list = [
+                "clipart", "painting", "real", "sketch"
+            ]
     
         elif cfg.DATASET.NAME == "PACSDF":
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
@@ -1004,11 +1014,11 @@ class TrainerDF_Local_DC(TrainerDF_Local):
             print("==========peservation or delete acc===============")
             for name in ["prv", "del"]:
                 acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
-                print(f"{name} : {acc:.2f}")
+                print(f"{name} : {acc:.5f}")
             print("==============domain specific acc=================")
             for domain_name in self.domain_list:
                 acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
-                print(f"{domain_name} : {acc:.2f}")
+                print(f"{domain_name} : {acc:.5f}")
             print("===================================================")
 
         for k, v in results.items():
@@ -1018,6 +1028,86 @@ class TrainerDF_Local_DC(TrainerDF_Local):
         return list(results.values())[0]
     
 from utils.loss_fn import SoftNearestNeighborsLoss
+
+class TrainerDF_NNL_Local(TrainerDF_Local):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.nnl = SoftNearestNeighborsLoss()
+    def forward_backward(self, batch):
+        image, label, domain = self.parse_batch_train(batch)
+        
+        prec = self.cfg.TRAINER.COOP.PREC
+        if prec == "amp":
+            with autocast():
+                output, img_feat, txt_feat = self.model(image)
+                loss = F.cross_entropy(output, label)
+            self.optim.zero_grad()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optim)
+            self.scaler.update()
+        else:
+            output, img_feat, local_feat, txt_feat = self.model(image)
+            if not self.cfg.NO_FORGET:
+                entropy = Entropy()
+                false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
+                
+                # for prv_domain in prv_domain_list:
+                prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+                prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+                # for del_domain in del_domain_list:
+                del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+                del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+                
+                if torch.equal(false_check_tensor, prv_domain_mask):
+                    loss_prv = 0
+                else :
+                    loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
+                if torch.equal(false_check_tensor, del_domain_mask):
+                    loss_del = 0
+                    loss_del_local = 0
+                else :
+                    num_of_local_feature = local_feat.shape[1]
+                    batch_size_del = local_feat[del_domain_mask].shape[0]
+                    output_local = local_feat[del_domain_mask].view(batch_size_del*num_of_local_feature, -1)
+                    loss_del = entropy(output[del_domain_mask])
+                    loss_del_local = entropy_local_topk(output_local, label[del_domain_mask],num_of_local_feature)
+                target_label = prv_domain_mask.int()
+                domain_loss = self.nnl(img_feat, target_label.long())
+                loss = loss_prv - loss_del - loss_del_local + domain_loss
+            else :
+                # print(type(output))
+                # print(type(label))
+
+                # print(output.shape)
+                # print(label.shape)
+                loss = F.cross_entropy(output, label)
+            self.model_backward_and_update(loss)
+        
+        if not self.cfg.NO_FORGET:
+            loss_summary = {
+                "loss": loss.item(),
+                "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
+                "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
+                "loss_del_local": loss_del_local.item() if isinstance(loss_del_local, torch.Tensor) else loss_del_local,
+                "domain_loss": domain_loss.item()
+                # "acc": compute_accuracy(output, label)[0].item(),
+            }
+            acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
+            loss_summary.update(acc)
+            # loss_summary.update(acc)
+        else :
+            loss_summary = {
+                "loss": loss.item(),
+                "acc": compute_accuracy(output, label)[0].item()
+            }
+            # acc = compute_accuracy(output, label)[0].item()
+        # acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
+        
+        if (self.batch_idx + 1) == self.num_batches:
+            self.update_lr()
+
+        return loss_summary
+
 class TrainerDF_NNL(SimpleTrainer):
     def __init__(self, cfg):
         super().__init__(cfg)
