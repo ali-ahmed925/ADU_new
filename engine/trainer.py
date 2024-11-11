@@ -1269,6 +1269,79 @@ class TrainerDF_NNL(SimpleTrainer):
             pass
         else:
             self._writer.add_embedding(mat, meta_data, label_img, global_step, tag)
+class TrainerDF_NNL_Divided(TrainerDF_NNL):
+    
+    def forward_backward(self, batch):
+        image, label, domain = self.parse_batch_train(batch)
+        
+        prec = self.cfg.TRAINER.COOP.PREC
+        if prec == "amp":
+            with autocast():
+                output, img_feat, txt_feat = self.model(image)
+                loss = F.cross_entropy(output, label)
+            self.optim.zero_grad()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optim)
+            self.scaler.update()
+        else:
+            output, img_feat, txt_feat = self.model(image)
+            if not self.cfg.NO_FORGET:
+                entropy = Entropy()
+                
+                false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
+                
+                # for prv_domain in prv_domain_list:
+                prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+                prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+                # for del_domain in del_domain_list:
+                del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+                del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+                
+                if torch.equal(false_check_tensor, prv_domain_mask):
+                    loss_prv = 0
+                else :
+                    loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
+                if torch.equal(false_check_tensor, del_domain_mask):
+                    loss_del = 0
+                else :
+                    loss_del = entropy(output[del_domain_mask])
+                target_label = prv_domain_mask.int()
+                # domain_loss = cossine_embedding_loss(img_feat, prv_domain_mask, label)
+                domain_loss = self.nllloss(img_feat, domain)
+
+                loss = loss_prv - loss_del + domain_loss
+            else :
+                # print(type(output))
+                # print(type(label))
+
+                # print(output.shape)
+                # print(label.shape)
+                loss = F.cross_entropy(output, label)
+            self.model_backward_and_update(loss)
+        
+        if not self.cfg.NO_FORGET:
+            loss_summary = {
+                "loss": loss.item(),
+                "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
+                "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
+                "domain_loss": domain_loss.item(),
+                # "acc": compute_accuracy(output, label)[0].item(),
+            }
+            acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
+            loss_summary.update(acc)
+            # loss_summary.update(acc)
+        else :
+            loss_summary = {
+                "loss": loss.item(),
+                "acc": compute_accuracy(output, label)[0].item()
+            }
+            # acc = compute_accuracy(output, label)[0].item()
+        # acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
+        
+        if (self.batch_idx + 1) == self.num_batches:
+            self.update_lr()
+
+        return loss_summary
 
 class TrainerDF_CosEmb(SimpleTrainer):
     def __init__(self, cfg):
