@@ -92,6 +92,126 @@ class Entropy(nn.Module):
         # for_loss = torch.sum((t * torch.log( x + self.eps)), 1)
         # for_loss = - (torch.sum(for_loss) /len(for_loss))
         # return for_loss
+class SoftNearestNeighborsLoss(nn.Module):
+    def __init__(self, temperature=0.1, distance_type='L2', mahalanobis_cov=None):
+        """
+        Calculate the distance between each pair of candidates. 
+        Pairs with the same label are considered positive,while pairs with different labels are negative.
+
+        Arguements:
+            candidates (torch.Tensor): A tensor representing the candidates to evaluate for contrastive loss.
+                                       Each candidate is expected to have associated positives and negatives
+                                       from the other candidates. The tensor shape is (B, C), where B is the
+                                       batch size and C represents candidate features.
+            labels (torch.Tensor): A tensor of (domain) labels for each candidate, with shape (B), where B is the batch size.
+            temperature (float): 温度パラメータ。距離の鋭敏さを調整。
+            distance_type (str): 距離タイプ。'L2', 'cosine', 'mahalanobis', 'L1'から選択。
+            mahalanobis_cov (torch.Tensor or None): マハラノビス距離の共分散行列。指定しない場合は単位行列。
+        Return:
+            loss (torch.Tensor)
+        """
+        super().__init__()
+        self.temperature = temperature
+        self.distance_type = distance_type
+        self.mahalanobis_cov = mahalanobis_cov
+    
+    def forward(self, candidates, labels):
+        if len(candidates) != len(labels):
+            raise ValueError(f"There are {len(candidates)} candidates, but only {(len(labels))} labels")
+        
+        device = candidates.device
+        b, embed_dim = candidates.shape
+        scale = embed_dim**-0.5 
+        
+        mask = (labels.unsqueeze(1) == labels.unsqueeze(0)).to(device).float()
+        mask.fill_diagonal_(0)
+
+        # 距離の計算を距離タイプごとに分岐
+        if self.distance_type == 'L2':
+            # ユークリッド距離（L2距離）の二乗
+            distance_matrix = torch.cdist(candidates, candidates, p=2) ** 2
+        
+        elif self.distance_type == 'cosine':
+            # コサイン距離（1 - コサイン類似度）
+            normalized_candidates = nn.functional.normalize(candidates, p=2, dim=1)
+            cosine_similarity = torch.mm(normalized_candidates, normalized_candidates.T)
+            distance_matrix = 1 - cosine_similarity  # 類似度から距離へ変換
+        
+        elif self.distance_type == 'mahalanobis':
+            # マハラノビス距離
+            if self.mahalanobis_cov is None:
+                cov_inv = torch.eye(embed_dim, device=device)  # 単位行列を使う
+            else:
+                cov_inv = torch.inverse(self.mahalanobis_cov).to(device)
+            # 各ペアのマハラノビス距離を計算
+            distance_matrix = torch.cdist(candidates @ cov_inv, candidates, p=2) ** 2
+
+        elif self.distance_type == 'L1':
+            # マンハッタン距離（L1距離）
+            distance_matrix = torch.cdist(candidates, candidates, p=1)
+        
+        else:
+            raise ValueError(f"Unsupported distance type: {self.distance_type}")
+
+        # 距離を温度とスケールに応じてスコアへ変換
+        exp_distance_matrix = torch.exp(-distance_matrix * scale / self.temperature)
+        
+        numerators = (exp_distance_matrix * mask).sum(dim=1)
+        denominators = exp_distance_matrix.sum(dim=1)
+
+        indices = numerators.nonzero()
+        numerators = numerators[indices]
+        denominators = denominators[indices]
+
+        r = torch.log(numerators / denominators)
+        loss = -r.mean()
+
+        return loss
+# class SoftNearestNeighborsLoss(nn.Module):
+#     def __init__(self, temperature=0.1):
+#         super().__init__()
+
+#         self.temperature = temperature
+    
+#     def forward(self, candidates, labels):
+#         """
+#         Calculate the distance between each pair of candidates. 
+#         Pairs with the same label are considered positive,while pairs with different labels are negative.
+
+#         Arguements:
+#             candidates (torch.Tensor): A tensor representing the candidates to evaluate for contrastive loss.
+#                                        Each candidate is expected to have associated positives and negatives
+#                                        from the other candidates. The tensor shape is (B, C), where B is the
+#                                        batch size and C represents candidate features.
+#             labels (torch.Tensor): A tensor of (domain) labels for each candidate, with shape (B), where B is the batch size.
+#         Return:
+#             loss (torch.Tensor)
+#         """
+#         if len(candidates) != len(labels):
+#             raise ValueError(f"There are {len(candidates)} candidates, but only {(len(labels))} labels")
+#         device = candidates.device
+#         b, embed_dim = candidates.shape
+
+#         scale = embed_dim**-0.5 
+        
+#         mask = (labels.unsqueeze(1) == labels.unsqueeze(0)).to(device).float()
+#         mask.fill_diagonal_(0)
+
+#         distance_matrix = torch.cdist(candidates, candidates, p=2) ** 2 
+#         exp_distance_matrix = torch.exp(-distance_matrix * scale / self.temperature) 
+        
+#         numerators = (exp_distance_matrix * mask).sum(dim=1)
+#         denominators = exp_distance_matrix.sum(dim=1) 
+
+#         # Remove the candidates that has no positive
+#         indices = numerators.nonzero()
+#         numerators = numerators[indices]
+#         denominators = denominators[indices]
+
+#         r = torch.log(numerators / denominators)
+#         loss = -r.mean()
+
+#         return loss
 
 # class ArcMarginProduct(nn.Module):
 #     r"""Implement of large margin arc distance: :
