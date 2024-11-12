@@ -4,7 +4,7 @@ export CUDA_VISIBLE_DEVICES=$1
 
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
-TRAINER=VPT
+TRAINER=VPT_w_NNL_Local_PromptGenerator
 
 DATASET=$2
 SEED=$3
@@ -13,8 +13,9 @@ NCTX=$5 # 8
 DEPTH_VISION=$6 # 9
 
 DIR=$7
+TOPK=$8
 # 7番目以降の引数をアンダースコアでつなげる
-DOMAIN_LIST=("${@:8}")
+DOMAIN_LIST=("${@:9}")
 
 DOMAIN_SEC=$(IFS=-; echo "${DOMAIN_LIST[*]}")
 DOMAIN_COUNT=${#DOMAIN_LIST[@]}
@@ -31,13 +32,15 @@ python train.py \
     --seed ${SEED} \
     --trainer ${TRAINER} \
     --dataset-config-file configs/datasets/${DATASET}.yaml \
-    --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
+    --config-file configs/trainers/VPT/${CFG}.yaml \
     --forget_domains "${DOMAIN_LIST[@]}" \
     --output-dir ${DIR} \
     --model-dir ${DIR} \
     --eval-only \
+    --topk ${TOPK} \
     --load-epoch 50 \
-    TRAINER.${TRAINER}.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
-    TRAINER.${TRAINER}.N_CTX_VISION ${NCTX} \
+    TRAINER.VPT.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
+    TRAINER.VPT.N_CTX_VISION ${NCTX} \
+    TRAINER.COOP.N_CTX ${NCTX}
     # TRAINER.${TRAINER}. ${NCTX} \
 # fi

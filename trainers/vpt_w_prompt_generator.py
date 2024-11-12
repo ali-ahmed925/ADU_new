@@ -65,7 +65,7 @@ class TextEncoder(nn.Module):
 
     def forward(self, prompts, tokenized_prompts):
         x = prompts + self.positional_embedding.type(self.dtype)
-        print(prompts.shape)
+        # print(prompts.shape)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x, _, _, _ = self.transformer(x)
         
@@ -165,7 +165,7 @@ class PromptLearner(nn.Module):
         #     prompts.append(pts_i)
         prompts = torch.stack(prompts)
 
-        return prompts
+        return prompts, domain_prompt
 
 
 class FixedEmbeddings():
@@ -213,14 +213,12 @@ class CustomCLIP(nn.Module):
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         # print("local shape", local_feat.shape)
-        prompts = self.prompt_learner(local_feat.view(local_feat.shape[0], local_feat.shape[2], 14, 14))
+        prompts, domain_prompt = self.prompt_learner(local_feat.view(local_feat.shape[0], local_feat.shape[2], 14, 14))
         # text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         # logits = logit_scale * image_features @ text_features.t()
-        print(type(prompts))
-        print(prompts.shape)
         logits = []
         for pts_i, imf_i in zip(prompts, image_features):
-            print(pts_i.shape)
+            # print(pts_i.shape)
             text_features = self.text_encoder(pts_i, tokenized_prompts)
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
             l_i = logit_scale * imf_i @ text_features.t()
@@ -229,7 +227,7 @@ class CustomCLIP(nn.Module):
         # if training:
         #     return F.cross_entropy(logits, label)
 
-        return logits, image_features, local_feat, text_features, prompts
+        return logits, image_features, local_feat, text_features, domain_prompt
 
 
 @TRAINER_REGISTRY.register()
