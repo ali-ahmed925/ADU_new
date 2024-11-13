@@ -58,6 +58,7 @@ import trainers.vpt_w_nnl
 import trainers.vpt_w_nnl_divided
 import trainers.vpt_w_nnl_local
 import trainers.vpt_w_prompt_generator
+import trainers.independentVL_VLAdapter
 
 def print_args(args, cfg):
     print("***************")
