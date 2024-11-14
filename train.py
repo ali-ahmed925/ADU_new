@@ -59,6 +59,9 @@ import trainers.vpt_w_nnl_divided
 import trainers.vpt_w_nnl_local
 import trainers.vpt_w_prompt_generator
 import trainers.independentVL_VLAdapter
+import trainers.independentVL_VLAdapter_NNL
+import trainers.independentVL_VLAdapter_DC
+import trainers.independentVL_VLAdapter_NNL_Divided
 
 def print_args(args, cfg):
     print("***************")
@@ -135,6 +138,8 @@ def extend_cfg(cfg, args):
 
     cfg.NO_FORGET = args.no_forget
     cfg.EVAL_ONLY = args.eval_only
+
+    cfg.LMD_DOMAIN_LOSS = args.lmd_domain_loss
 
     cfg.TRAINER.COOP_W_ADAPTER = CN()
 
@@ -326,6 +331,12 @@ if __name__ == "__main__":
         default=3,
         type=int,
         help="select local feat topk "
+    )
+
+    parser.add_argument(
+        "--lmd_domain_loss",
+        type=float,
+        default=1.0
     )
     
     parser.add_argument(

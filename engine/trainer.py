@@ -1298,6 +1298,7 @@ class TrainerDF_NNL(SimpleTrainer):
         self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
         self.classnames = self.dm.dataset.classnames
         self.nllloss = SoftNearestNeighborsLoss()
+        self.lmd_domain_loss = cfg.LMD_DOMAIN_LOSS
 
     def run_epoch(self):
         self.set_model_mode("train")
@@ -1379,7 +1380,7 @@ class TrainerDF_NNL(SimpleTrainer):
                 # domain_loss = cossine_embedding_loss(img_feat, prv_domain_mask, label)
                 domain_loss = self.nllloss(img_feat, target_label.long())
 
-                loss = loss_prv - loss_del + domain_loss
+                loss = loss_prv - loss_del + self.lmd_domain_loss * domain_loss
             else :
                 # print(type(output))
                 # print(type(label))
