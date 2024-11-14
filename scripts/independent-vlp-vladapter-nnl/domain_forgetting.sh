@@ -19,11 +19,11 @@ DOMAIN_LIST=("${@:8}")
 DOMAIN_SEC=$(IFS=-; echo "${DOMAIN_LIST[*]}")
 DOMAIN_COUNT=${#DOMAIN_LIST[@]}
 TODAY=$(date +"%Y%m%d_%H%M%S")
-# SHOTS=16
+SHOTS=16
 
 
 # DIR=output/${DATASET}/${TRAINER}/${CFG}/seed${SEED}
-DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}/seed${SEED}/${TODAY}
+DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}/seed${SEED}/${TODAY}
 if [ -d "$DIR" ]; then
     echo "Results are available in ${DIR}. Resuming..."
     # python train.py \
@@ -45,6 +45,7 @@ else
     --config-file configs/trainers/IVLP/${CFG}.yaml \
     --forget_domains "${DOMAIN_LIST[@]}" \
     --output-dir ${DIR} \
+    --num_shots ${SHOTS} \
     TRAINER.IVLP.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
     TRAINER.IVLP.N_CTX_VISION ${NCTX} \
     TRAINER.IVLP.PROMPT_DEPTH_TEXT ${DEPTH_TEXT} \

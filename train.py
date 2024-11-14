@@ -107,6 +107,8 @@ def reset_cfg(cfg, args):
 
     if args.head:
         cfg.MODEL.HEAD.NAME = args.head
+    if args.num_shots:
+        cfg.DATASET.NUM_SHOTS = args.num_shots
 
 
 def extend_cfg(cfg, args):
@@ -318,7 +320,9 @@ if __name__ == "__main__":
         "--grid_num", type=int, help="select grid number 1 < grid_num < 224 ??", default=8
     )
 
-
+    parser.add_argument(
+        "--num_shots", type=int, default=-1
+    )
     parser.add_argument(
         "--forget_domains",
         default=[],
