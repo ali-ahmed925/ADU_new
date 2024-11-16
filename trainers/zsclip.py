@@ -160,21 +160,21 @@ class ZeroshotCLIP(TrainerDF):
                 img_feat_all = torch.cat((img_feat_all, img_feat))
                 # input_all = torch.cat((input_all, input))
             
-            img_np = input.cpu().numpy()
-            cv2_img = cv2.cvtColor (img_np, cv2.COLOR_RGB2BGR)
+            # img_np = input.cpu().numpy()
+            # cv2_img = cv2.cvtColor (img_np, cv2.COLOR_RGB2BGR)
             
 
-            features = img_feat @ txt_feat.t()
-            similarity_map = clip.get_similarity_map(features[:,1:, :], cv2_img.shape[:2])
+            # features = img_feat @ txt_feat.t()
+            # similarity_map = clip.get_similarity_map(features[:,1:, :], cv2_img.shape[:2])
 
-            for b in range(similarity_map.shape[0]):
-                for n in range(similarity_map.shape[-1]):
-                    vis = (similarity_map[b, :, :, n].cpu().numpy() * 255).astype('uint8')
-                    vis = cv2.applyColorMap(vis, cv2.COLORMAP_JET)
-                    vis = cv2_img * 0.4 + vis * 0.6
-                    vis = cv2.cvtColor(vis.astype('uint8'), cv2.COLOR_BGR2RGB)
-                    print('CLIP:', self.classnames[n])
-                    plt.imsave(f"{self.classnames[n]}.png", vis)
+            # for b in range(similarity_map.shape[0]):
+            #     for n in range(similarity_map.shape[-1]):
+            #         vis = (similarity_map[b, :, :, n].cpu().numpy() * 255).astype('uint8')
+            #         vis = cv2.applyColorMap(vis, cv2.COLORMAP_JET)
+            #         vis = cv2_img * 0.4 + vis * 0.6
+            #         vis = cv2.cvtColor(vis.astype('uint8'), cv2.COLOR_BGR2RGB)
+            #         print('CLIP:', self.classnames[n])
+            #         plt.imsave(f"{self.classnames[n]}.png", vis)
 
 
         # meta_data_cls_agno = []

@@ -1152,7 +1152,7 @@ class TrainerDF_NNL_Local_PromptGenerator(TrainerDF_NNL_Local):
                     loss_del_local = entropy_local_topk(output_local, label[del_domain_mask],num_of_local_feature)
                 target_label = prv_domain_mask.int()
                 domain_loss = self.nnl(img_feat, target_label.long())
-                domain_prompt_loss = self.nnl(domain_specific_prompt, domain)
+                domain_prompt_loss = self.nnl(domain_specific_prompt.view(domain_specific_prompt.shape[0]*domain_specific_prompt.shape[1], -1), domain, domain_specific_prompt.shape[1])
                 loss = loss_prv - loss_del - loss_del_local + domain_loss + domain_prompt_loss
             else :
                 # print(type(output))
@@ -1170,7 +1170,7 @@ class TrainerDF_NNL_Local_PromptGenerator(TrainerDF_NNL_Local):
                 "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
                 "loss_del_local": loss_del_local.item() if isinstance(loss_del_local, torch.Tensor) else loss_del_local,
                 "domain_loss": domain_loss.item(),
-                "domain_prompt_loss": domain_specific_prompt.item()
+                "domain_prompt_loss": domain_prompt_loss.item()
                 # "acc": compute_accuracy(output, label)[0].item(),
             }
             acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
@@ -1188,6 +1188,88 @@ class TrainerDF_NNL_Local_PromptGenerator(TrainerDF_NNL_Local):
             self.update_lr()
 
         return loss_summary
+    
+    @torch.no_grad()
+    def test(self, split=None):
+        """A generic testing pipeline."""
+        self.set_tensorboard()
+        self.set_model_mode("eval")
+        self.evaluator.reset()
+
+        if split is None:
+            split = self.cfg.TEST.SPLIT
+
+        if split == "val" and self.val_loader is not None:
+            data_loader = self.val_loader
+        else:
+            split = "test"  # in case val_loader is None
+            data_loader = self.test_loader
+
+        print(f"Evaluate on the *{split}* set")
+        eval_dict = {}
+        for batch_idx, batch in enumerate(tqdm(data_loader)):
+            input, label, domain = self.parse_batch_test(batch)
+            output, img_feat, local_feat, txt_feat,_ = self.model_inference(input)
+            self.evaluator.process(output, label)
+
+            # for prv_domain in prv_domain_list:
+            prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+            prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+            # for del_domain in del_domain_list:
+            del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+            del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+
+            eval_dict = compute_acc_for_df_eval(
+                eval_dict,
+                output,
+                label,
+                prv_domain_mask,
+                del_domain_mask,
+                domain,
+                self.domain_list,
+                self.device
+            ) 
+            if batch_idx == 0:
+                label_all = label
+                domain_all = domain
+                img_feat_all = img_feat
+                # input_all = input
+
+            else :
+                label_all = torch.cat((label_all, label))
+                domain_all = torch.cat((domain_all, domain))
+                img_feat_all = torch.cat((img_feat_all, img_feat))
+                # input_all = torch.cat((input_all, input))
+
+        for cls_id, clsname in enumerate(self.classnames):
+            cls_specific_index = (label_all == cls_id)
+            if torch.all(cls_specific_index == False):
+                pass
+            else:
+                domain_metadata = []
+                for d in domain_all[cls_specific_index]:
+                    domain_metadata.append(self.domain_list[int(d)])
+                tag = f"{split}/tsne-plot/{clsname}"
+                # self.write_embedding(img_feat[cls_specific_index], domain_metadata, input[cls_specific_index], global_step=batch_idx, tag=tag)
+                self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
+
+        results = self.evaluator.evaluate()
+        if not self.cfg.NO_FORGET:
+            print("==========peservation or delete acc===============")
+            for name in ["prv", "del"]:
+                acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
+                print(f"{name} : {acc:.5f}")
+            print("==============domain specific acc=================")
+            for domain_name in self.domain_list:
+                acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
+                print(f"{domain_name} : {acc:.5f}")
+            print("===================================================")
+
+        for k, v in results.items():
+            tag = f"{split}/{k}"
+            self.write_scalar(tag, v, self.epoch)
+
+        return list(results.values())[0]
 
 class TrainerDF_NNL(SimpleTrainer):
     def __init__(self, cfg):
@@ -1216,6 +1298,7 @@ class TrainerDF_NNL(SimpleTrainer):
         self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
         self.classnames = self.dm.dataset.classnames
         self.nllloss = SoftNearestNeighborsLoss()
+        self.lmd_domain_loss = cfg.LMD_DOMAIN_LOSS
 
     def run_epoch(self):
         self.set_model_mode("train")
@@ -1297,7 +1380,7 @@ class TrainerDF_NNL(SimpleTrainer):
                 # domain_loss = cossine_embedding_loss(img_feat, prv_domain_mask, label)
                 domain_loss = self.nllloss(img_feat, target_label.long())
 
-                loss = loss_prv - loss_del + domain_loss
+                loss = loss_prv - loss_del + self.lmd_domain_loss * domain_loss
             else :
                 # print(type(output))
                 # print(type(label))

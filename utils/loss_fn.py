@@ -9,6 +9,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.nn import Parameter
 import math
+from typing import Optional
 
 # def get_entropy(output):
 #   ### softmaxせずに渡す (batch_size, # of classes)
@@ -115,10 +116,12 @@ class SoftNearestNeighborsLoss(nn.Module):
         self.distance_type = distance_type
         self.mahalanobis_cov = mahalanobis_cov
     
-    def forward(self, candidates, labels):
+    def forward(self, candidates, labels, labels_repeat = None):
+        if labels_repeat is not None:
+            labels = labels.repeat_interleave(labels_repeat)
+
         if len(candidates) != len(labels):
             raise ValueError(f"There are {len(candidates)} candidates, but only {(len(labels))} labels")
-        
         device = candidates.device
         b, embed_dim = candidates.shape
         scale = embed_dim**-0.5 
@@ -165,7 +168,6 @@ class SoftNearestNeighborsLoss(nn.Module):
 
         r = torch.log(numerators / denominators)
         loss = -r.mean()
-
         return loss
 # class SoftNearestNeighborsLoss(nn.Module):
 #     def __init__(self, temperature=0.1):

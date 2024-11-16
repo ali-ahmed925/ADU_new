@@ -14,7 +14,7 @@ CUDA_VISIBLE_DEVICES=${gpuid} python train.py \
     --trainer ${TRAINER} \
     --dataset-config-file configs/datasets/${DATASET}.yaml \
     --config-file configs/trainers/CoOp/${CFG}.yaml \
-    --output-dir output/${TRAINER}/${CFG}/${DATASET} \
+    --output-dir /nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/${CFG}/${DATASET} \
     --eval-only \
     --no_forget \
     --forget_domain none

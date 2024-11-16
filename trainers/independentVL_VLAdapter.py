@@ -1,6 +1,4 @@
 import os.path as osp
-from collections import OrderedDict
-import math
 
 import torch
 import torch.nn as nn
@@ -8,12 +6,11 @@ from torch.nn import functional as F
 from torch.cuda.amp import GradScaler, autocast
 
 from dassl.engine import TRAINER_REGISTRY, TrainerX
-from dassl.metrics import compute_accuracy
 from dassl.utils import load_pretrained_weights, load_checkpoint
 from dassl.optim import build_optimizer, build_lr_scheduler
 
 from clip import clip
-from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
+from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer 
 
 import datetime
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
@@ -25,8 +22,7 @@ from dassl.utils import (
 import time
 from tqdm import tqdm
 
-from engine.trainer import TrainerDF, TrainerDF_NNL, TrainerDF_NNL_Local, TrainerDF_NNL_Local_PromptGenerator
-from tools.prompt_generator import DomainPromptGenerator
+from engine.trainer import TrainerDF
 
 _tokenizer = _Tokenizer()
 
@@ -43,15 +39,13 @@ def load_clip_to_cpu(cfg):
 
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
-    design_details = { "trainer": "VPT_w_NNL_Local_PromptGenerator",
-                    "vision_depth": cfg.TRAINER.VPT.PROMPT_DEPTH_VISION,
-                      "vision_ctx": cfg.TRAINER.VPT.N_CTX_VISION,
-                      "language_depth": 0,
-                      "language_ctx": 0}
-    assert cfg.TRAINER.VPT.PROMPT_DEPTH_VISION >= 1, "For Vision Prompting, PROMPT_DEPTH_VISION should be >= 1"
+    design_details = {"trainer": 'IVLP',
+                      "vision_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION,
+                      "language_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT, "vision_ctx": cfg.TRAINER.IVLP.N_CTX_VISION,
+                      "language_ctx": cfg.TRAINER.IVLP.N_CTX_TEXT}
     model = clip.build_model(state_dict or model.state_dict(), design_details)
 
-    return model.float()
+    return model
 
 
 class TextEncoder(nn.Module):
@@ -65,10 +59,8 @@ class TextEncoder(nn.Module):
 
     def forward(self, prompts, tokenized_prompts):
         x = prompts + self.positional_embedding.type(self.dtype)
-        # print(prompts.shape)
         x = x.permute(1, 0, 2)  # NLD -> LND
-        x, _, _, _ = self.transformer(x)
-        
+        x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.ln_final(x).type(self.dtype)
 
@@ -78,30 +70,43 @@ class TextEncoder(nn.Module):
 
         return x
 
-class PromptLearner(nn.Module):
+
+class VLPromptLearner(nn.Module):
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
         n_cls = len(classnames)
-        n_ctx = cfg.TRAINER.COOP.N_CTX
+        # Make sure Language depth >= 1
+        assert cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT >= 1, "In Independent VL prompting, Language prompt depth should be >=1" \
+                                                        "\nPlease use VPT trainer if you want to learn only vision " \
+                                                        "branch  "
+        n_ctx = cfg.TRAINER.IVLP.N_CTX_TEXT
+        ctx_init = cfg.TRAINER.IVLP.CTX_INIT
         dtype = clip_model.dtype
         ctx_dim = clip_model.ln_final.weight.shape[0]
-        
-        self.prompt_generator = DomainPromptGenerator()
-        
-        ctx_vectors = torch.empty(n_ctx, ctx_dim, dtype=dtype)
-        nn.init.normal_(ctx_vectors, std=0.02)
-        prompt_prefix = " ".join(["X"] * n_ctx)
+        vis_dim = clip_model.visual.output_dim
+        clip_imsize = clip_model.visual.input_resolution
+        cfg_imsize = cfg.INPUT.SIZE[0]
+        assert cfg_imsize == clip_imsize, f"cfg_imsize ({cfg_imsize}) must equal to clip_imsize ({clip_imsize})"
 
-        print(f'Initial context: "{prompt_prefix}"')
-        print(f"Number of context words (tokens): {n_ctx}")
-
-        # self.ctx = nn.Parameter(ctx_vectors)
-
-        # self.meta_net = nn.Sequential(OrderedDict([
-        #     ("linear1", nn.Linear(vis_dim, vis_dim // 16)),
-        #     ("relu", nn.ReLU(inplace=True)),
-        #     ("linear2", nn.Linear(vis_dim // 16, ctx_dim))
-        # ]))
+        if ctx_init and (n_ctx) <= 4:
+            # Use given words to initialize context vectors
+            ctx_init = ctx_init.replace("_", " ")
+            n_ctx = n_ctx
+            prompt = clip.tokenize(ctx_init)
+            with torch.no_grad():
+                embedding = clip_model.token_embedding(prompt).type(dtype)
+            ctx_vectors = embedding[0, 1: 1 + n_ctx, :]
+            prompt_prefix = ctx_init
+        else:
+            # Random initialization
+            ctx_vectors = torch.empty(n_ctx, ctx_dim, dtype=dtype)
+            nn.init.normal_(ctx_vectors, std=0.02)
+            prompt_prefix = " ".join(["X"] * n_ctx)
+        print(f"Independent V-L design")
+        print(f'Initial text context: "{prompt_prefix}"')
+        print(f"Number of context words (tokens) for Language prompting: {n_ctx}")
+        print(f"Number of context words (tokens) for Vision prompting: {cfg.TRAINER.IVLP.N_CTX_VISION}")
+        self.ctx = nn.Parameter(ctx_vectors)
 
         classnames = [name.replace("_", " ") for name in classnames]
         name_lens = [len(_tokenizer.encode(name)) for name in classnames]
@@ -143,98 +148,70 @@ class PromptLearner(nn.Module):
 
         return prompts
 
-    def forward(self, im_features):
+    def forward(self):
+        ctx = self.ctx
+        if ctx.dim() == 2:
+            ctx = ctx.unsqueeze(0).expand(self.n_cls, -1, -1)
+
         prefix = self.token_prefix
         suffix = self.token_suffix
-        # ctx = self.ctx  # (n_ctx, ctx_dim)
-        domain_prompt = self.prompt_generator(im_features)  # (batch, ctx_dim)
-        # bias = bias.unsqueeze(1)  # (batch, 1, ctx_dim)
-        # ctx = ctx.unsqueeze(0)  # (1, n_ctx, ctx_dim)
-        # ctx_shifted = ctx + bias  # (batch, n_ctx, ctx_dim)
+        prompts = self.construct_prompts(ctx, prefix, suffix)
 
-        # Use instance-conditioned context tokens for all classes
-        prompts = []
-        for p_i in domain_prompt:
-            p_i = p_i.unsqueeze(0).expand(self.n_cls, -1, -1)
-            pts_i = self.construct_prompts(p_i, prefix, suffix)
-            prompts.append(pts_i)
-        # for ctx_shifted_i in ctx_shifted:
-        #     ctx_i = ctx_shifted_i.unsqueeze(0).expand(self.n_cls, -1, -1)
-
-        #     pts_i = self.construct_prompts(ctx_i, prefix, suffix)  # (n_cls, n_tkn, ctx_dim)
-        #     prompts.append(pts_i)
-        prompts = torch.stack(prompts)
-
-        return prompts, domain_prompt
-
-
-class FixedEmbeddings():
-    def __init__(self, cfg, classnames, clip_model):
-        clip_imsize = clip_model.visual.input_resolution
-        cfg_imsize = cfg.INPUT.SIZE[0]
-        assert cfg_imsize == clip_imsize, f"cfg_imsize ({cfg_imsize}) must equal to clip_imsize ({clip_imsize})"
-
-        prompt_prefix = "a photo of a"
-        print('Vision Prompting Design')
-        print(f'Initial context: "{prompt_prefix}"')
-        print(f"Number of context words (tokens) for Vision prompting: {cfg.TRAINER.VPT.N_CTX_VISION}")
-        print(f"Using fixed hand crated prompts")
-
-        classnames = [name.replace("_", " ") for name in classnames]
-        prompts = [prompt_prefix + " " + name + "." for name in classnames]
-
-        tokenized_prompts = torch.cat([clip.tokenize(p) for p in prompts])
-        with torch.no_grad():
-            text_features = clip_model.encode_text(tokenized_prompts)
-
-        self.fixed_embeddings = text_features
-
-    def return_fixed_embeddings(self):
-        return self.fixed_embeddings
+        return prompts
 
 
 class CustomCLIP(nn.Module):
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
-        self.embeddings = FixedEmbeddings(cfg, classnames, clip_model)
+        self.prompt_learner = VLPromptLearner(cfg, classnames, clip_model)
+        self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = clip_model.visual
         self.text_encoder = TextEncoder(clip_model)
-        self.prompt_learner = PromptLearner(cfg, classnames, clip_model)
-        self.tokenizer_prompts = self.prompt_learner.tokenized_prompts
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
+        self.vision_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        self.text_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
 
-    def forward(self, image, label=None, training=False):
-        tokenized_prompts = self.tokenizer_prompts
+    def forward(self, image, label=None):
+        tokenized_prompts = self.tokenized_prompts
         logit_scale = self.logit_scale.exp()
 
-        # text_features = self.embeddings.return_fixed_embeddings().cuda()
-        image_features, local_feat = self.image_encoder(image.type(self.dtype))
+        prompts = self.prompt_learner()
+        text_features = self.text_encoder(prompts, tokenized_prompts)
+        image_features = self.image_encoder(image.type(self.dtype))
+        
+        image_features = self.vision_adapter(image_features)
+        text_features = self.text_adapter(text_features)
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        # print("local shape", local_feat.shape)
-        prompts, domain_prompt = self.prompt_learner(local_feat.view(local_feat.shape[0], local_feat.shape[2], 14, 14))
-        # text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-        # logits = logit_scale * image_features @ text_features.t()
-        logits = []
-        for pts_i, imf_i in zip(prompts, image_features):
-            # print(pts_i.shape)
-            text_features = self.text_encoder(pts_i, tokenized_prompts)
-            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-            l_i = logit_scale * imf_i @ text_features.t()
-            logits.append(l_i)
-        logits = torch.stack(logits)
-        # if training:
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        logits = logit_scale * image_features @ text_features.t()
+
+        # if self.prompt_learner.training:
         #     return F.cross_entropy(logits, label)
 
-        return logits, image_features, local_feat, text_features, domain_prompt
+        return logits, image_features, text_features
 
+class Adapter(nn.Module):
+    def __init__(self, c_in, dtype, reduction=4):
+        super(Adapter, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(c_in, c_in // reduction, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True),
+            nn.Linear(c_in // reduction, c_in, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True)
+        )
+        self.dtype = dtype
+
+    def forward(self, x):
+        x = self.fc(x)
+        return x.type(self.dtype)
 
 @TRAINER_REGISTRY.register()
-class VPT_w_NNL_Local_PromptGenerator(TrainerDF_NNL_Local_PromptGenerator):
-
+class IVLP_VL_Adapter(TrainerDF):
+        
     def check_cfg(self, cfg):
-        assert cfg.TRAINER.VPT.PREC in ["fp16", "fp32", "amp"]
+        assert cfg.TRAINER.IVLP.PREC in ["fp16", "fp32", "amp"]
 
     def build_model(self):
         cfg = self.cfg
@@ -243,7 +220,7 @@ class VPT_w_NNL_Local_PromptGenerator(TrainerDF_NNL_Local_PromptGenerator):
         print(f"Loading CLIP (backbone: {cfg.MODEL.BACKBONE.NAME})")
         clip_model = load_clip_to_cpu(cfg)
 
-        if cfg.TRAINER.VPT.PREC == "fp32" or cfg.TRAINER.VPT.PREC == "amp":
+        if cfg.TRAINER.IVLP.PREC == "fp32" or cfg.TRAINER.IVLP.PREC == "amp":
             # CLIP's default precision is fp16
             clip_model.float()
 
@@ -257,6 +234,8 @@ class VPT_w_NNL_Local_PromptGenerator(TrainerDF_NNL_Local_PromptGenerator):
             if name_to_update not in name:
                 # Make sure that VPT prompts are updated
                 if "VPT" in name:
+                    param.requires_grad_(True)
+                elif "adapter" in name:
                     param.requires_grad_(True)
                 else:
                     param.requires_grad_(False)
@@ -275,13 +254,13 @@ class VPT_w_NNL_Local_PromptGenerator(TrainerDF_NNL_Local_PromptGenerator):
         # NOTE: only give prompt_learner to the optimizer
         self.optim = build_optimizer(self.model, cfg.OPTIM)
         self.sched = build_lr_scheduler(self.optim, cfg.OPTIM)
-        self.register_model("prompt_learner", self.model, self.optim, self.sched)
+        self.register_model("VLPromptLearner", self.model, self.optim, self.sched)
 
-        self.scaler = GradScaler() if cfg.TRAINER.VPT.PREC == "amp" else None
+        self.scaler = GradScaler() if cfg.TRAINER.IVLP.PREC == "amp" else None
 
         # Note that multi-gpu training could be slow because CLIP's size is
         # big, which slows down the copy operation in DataParallel
-        device_count = 1
+        device_count = torch.cuda.device_count()
         if device_count > 1:
             print(f"Multiple GPUs detected (n_gpus={device_count}), use all of them!")
             self.model = nn.DataParallel(self.model)

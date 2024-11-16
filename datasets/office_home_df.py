@@ -4,6 +4,7 @@ from dassl.utils import listdir_nohidden
 from dassl.data.datasets import DATASET_REGISTRY, Datum, DatasetBase
 from dassl.utils import mkdir_if_missing
 from dassl.data.datasets.dg import DigitsDG
+import random
 
 DOMAIN_NAMES = ["art", "clipart", "product", "real_world"]
 
@@ -44,12 +45,63 @@ class OfficeHomeDF(DatasetBase):
             val += read_data(
                 self.dataset_dir, [domain], "val"
             )
+        
+        num_shots = cfg.DATASET.NUM_SHOTS  # 使用する数ショット数を設定
+        train = self.generate_fewshot_dataset(train, num_shots=num_shots, repeat=True, seed=cfg.SEED)
+
         for domain in test_domains:
             test += read_data(
                 self.dataset_dir, [domain], "val"
             )
-
         super().__init__(train_x=train, val=val, test=test)
+    
+    def generate_fewshot_dataset(self, *data_sources, num_shots=-1, repeat=False, seed=0):
+        random.seed(seed)
+        if num_shots < 1:
+            if len(data_sources) == 1:
+                return data_sources[0]
+            return data_sources
+
+        print(f"Creating a {num_shots}-shot dataset with domain consideration")
+
+        output = []
+
+        for data_source in data_sources:
+            tracker = self.split_dataset_by_label_and_domain(data_source)  # ドメインごとに分割
+            dataset = []
+
+            for (label, domain), items in tracker.items():
+                if len(items) >= num_shots:
+                    sampled_items = random.sample(items, num_shots)
+                else:
+                    sampled_items = random.choices(items, k=num_shots) if repeat else items
+                dataset.extend(sampled_items)
+
+            output.append(dataset)
+
+        return output[0] if len(output) == 1 else output
+
+
+    def split_dataset_by_label_and_domain(self, data_source):
+        """
+        Split the dataset by both label and domain.
+        
+        Args:
+            data_source: List of Datum objects.
+        
+        Returns:
+            A dictionary with keys as (label, domain) tuples and values as lists of Datum objects.
+        """
+        tracker = {}
+        
+        for item in data_source:
+            key = (item.label, item.domain)  # (label, domain)のタプルをキーとして使用
+            if key not in tracker:
+                tracker[key] = []
+            tracker[key].append(item)
+        
+        return tracker
+
 
 def read_data(dataset_dir, input_domains, split):
 
@@ -89,3 +141,5 @@ def read_data(dataset_dir, input_domains, split):
                 items.append(item)
 
         return items
+
+    
