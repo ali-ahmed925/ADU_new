@@ -8,6 +8,7 @@ from .oxford_pets import OxfordPets
 from .dtd import DescribableTextures as DTD
 from typing import List
 import os.path as osp
+import random
 
 DOMAIN_NAMES = [
     "clipart", 
@@ -62,12 +63,60 @@ class DomainNetMiniDF(DatasetBase):
             "clipart", "painting", "real", "sketch"
         ]
         train_x = self._read_data(train_domains, split="train")
-        train_u = self._read_data(train_domains, split="train")
+        # train_u = self._read_data(train_domains, split="train")
         val = self._read_data(test_domains, split="test")
         test = self._read_data(test_domains, split="test")
+        num_shots = cfg.DATASET.NUM_SHOTS  # 使用する数ショット数を設定
+        train_x = self.generate_fewshot_dataset(train_x, num_shots=num_shots, repeat=True, seed=cfg.SEED)
+        super().__init__(train_x=train_x, val=val, test=test)
+    
+    def generate_fewshot_dataset(self, *data_sources, num_shots=-1, repeat=False, seed=0):
+        random.seed(seed)
+        if num_shots < 1:
+            if len(data_sources) == 1:
+                return data_sources[0]
+            return data_sources
 
-        super().__init__(train_x=train_x, train_u=train_u, val=val, test=test)
+        print(f"Creating a {num_shots}-shot dataset with domain consideration")
 
+        output = []
+
+        for data_source in data_sources:
+            tracker = self.split_dataset_by_label_and_domain(data_source)  # ドメインごとに分割
+            dataset = []
+
+            for (label, domain), items in tracker.items():
+                if len(items) >= num_shots:
+                    sampled_items = random.sample(items, num_shots)
+                else:
+                    sampled_items = random.choices(items, k=num_shots) if repeat else items
+                dataset.extend(sampled_items)
+
+            output.append(dataset)
+
+        return output[0] if len(output) == 1 else output
+
+
+    def split_dataset_by_label_and_domain(self, data_source):
+        """
+        Split the dataset by both label and domain.
+        
+        Args:
+            data_source: List of Datum objects.
+        
+        Returns:
+            A dictionary with keys as (label, domain) tuples and values as lists of Datum objects.
+        """
+        tracker = {}
+        
+        for item in data_source:
+            key = (item.label, item.domain)  # (label, domain)のタプルをキーとして使用
+            if key not in tracker:
+                tracker[key] = []
+            tracker[key].append(item)
+        
+        return tracker
+    
     def _read_data(self, input_domains, split="train"):
         items = []
 
