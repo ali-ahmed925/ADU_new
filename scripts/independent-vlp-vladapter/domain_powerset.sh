@@ -15,7 +15,7 @@ for ((i = 1; i < 15; i++)); do
   done
   # コマンドを実行
   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
-  bash scripts/independent-vlp-vladapter/domain_forgetting.sh $gpu_id office_home_df 1 vit_b16_ep50 8 $vision_depth $text_depth $selected_domains_str
+  bash scripts/independent-vlp-vladapter/domain_forgetting.sh $gpu_id office_home_df 2 vit_b16_ep50 8 $vision_depth $text_depth $selected_domains_str
   # echo "${selected_domains[@]}"
 done
 
@@ -30,6 +30,6 @@ for ((i = 1; i < 15; i++)); do
   done
   # コマンドを実行
   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
-  bash scripts/independent-vlp-vladapter/domain_forgetting.sh $gpu_id pacs_df 1 vit_b16_ep50 8 $vision_depth $text_depth $selected_domains_str
+  bash scripts/independent-vlp-vladapter/domain_forgetting.sh $gpu_id pacs_df 2 vit_b16_ep50 8 $vision_depth $text_depth $selected_domains_str
   # echo "${selected_domains[@]}"
 done
