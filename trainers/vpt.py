@@ -100,6 +100,20 @@ class FixedEmbeddings():
     def return_fixed_embeddings(self):
         return self.fixed_embeddings
 
+class Adapter(nn.Module):
+    def __init__(self, c_in, dtype, reduction=4):
+        super(Adapter, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(c_in, c_in // reduction, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True),
+            nn.Linear(c_in // reduction, c_in, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True)
+        )
+        self.dtype = dtype
+
+    def forward(self, x):
+        x = self.fc(x)
+        return x.type(self.dtype)
 
 class CustomCLIP(nn.Module):
     def __init__(self, cfg, classnames, clip_model):
@@ -109,6 +123,14 @@ class CustomCLIP(nn.Module):
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
+
+        if cfg.USE_DOMAIN_CLASIFIER_LOSS:
+            if cfg.IS_DOMAIN_DIVIDED:
+                self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
+            else :
+                self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+            self.domain_classifier.to(self.dtype)
+        self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
 
     def forward(self, image, label=None, training=False):
         logit_scale = self.logit_scale.exp()
@@ -120,6 +142,9 @@ class CustomCLIP(nn.Module):
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         logits = logit_scale * image_features @ text_features.t()
 
+        if self.use_domain_cls_loss:
+            domain_logit = self.domain_classifier(image_features)
+            return logits, image_features, text_features, domain_logit
         # if training:
         #     return F.cross_entropy(logits, label)
 
@@ -153,6 +178,8 @@ class VPT(TrainerDF):
             if name_to_update not in name:
                 # Make sure that VPT prompts are updated
                 if "VPT" in name:
+                    param.requires_grad_(True)
+                elif "domain_classifier" in name:
                     param.requires_grad_(True)
                 else:
                     param.requires_grad_(False)
