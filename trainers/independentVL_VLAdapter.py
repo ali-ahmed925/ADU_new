@@ -247,6 +247,8 @@ class IVLP_VL_Adapter(TrainerDF):
                     param.requires_grad_(True)
                 elif "adapter" in name:
                     param.requires_grad_(True)
+                elif "domain_classifier" in name:
+                    param.requires_grad_(True)
                 else:
                     param.requires_grad_(False)
 
