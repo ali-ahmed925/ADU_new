@@ -35,6 +35,9 @@ CUSTOM_TEMPLATES = {
     "OfficeHomeDF": "a photo of a {}.",
     "DomainNetDF": "a photo of a {}",
     "PACSDF": "a photo of a {}",
+    "DomainNetMiniDF": "a photo of a {}",
+    "VLCSDF": "a photo of a {}",
+    "Office31DF": "a photo of a {}",
 }
 
 from dassl.utils import (
@@ -108,117 +111,117 @@ class ZeroshotCLIP(TrainerDF):
             self.time_start = time.time()
 
     
-    @torch.no_grad()
-    def test(self, split=None):
-        """A generic testing pipeline."""
-        self.set_tensorboard()
-        self.set_model_mode("eval")
-        self.evaluator.reset()
+    # @torch.no_grad()
+    # def test(self, split=None):
+    #     """A generic testing pipeline."""
+    #     self.set_tensorboard()
+    #     self.set_model_mode("eval")
+    #     self.evaluator.reset()
 
-        if split is None:
-            split = self.cfg.TEST.SPLIT
+    #     if split is None:
+    #         split = self.cfg.TEST.SPLIT
 
-        if split == "val" and self.val_loader is not None:
-            data_loader = self.val_loader
-        else:
-            split = "test"  # in case val_loader is None
-            data_loader = self.test_loader
+    #     if split == "val" and self.val_loader is not None:
+    #         data_loader = self.val_loader
+    #     else:
+    #         split = "test"  # in case val_loader is None
+    #         data_loader = self.test_loader
 
-        print(f"Evaluate on the *{split}* set")
-        eval_dict = {}
-        for batch_idx, batch in enumerate(tqdm(data_loader)):
-            input, label, domain = self.parse_batch_test(batch)
-            output, img_feat, txt_feat = self.model_inference(input)
-            self.evaluator.process(output, label)
+    #     print(f"Evaluate on the *{split}* set")
+    #     eval_dict = {}
+    #     for batch_idx, batch in enumerate(tqdm(data_loader)):
+    #         input, label, domain = self.parse_batch_test(batch)
+    #         output, img_feat, txt_feat = self.model_inference(input)
+    #         self.evaluator.process(output, label)
 
-            # for prv_domain in prv_domain_list:
-            prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
-            prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
-            # for del_domain in del_domain_list:
-            del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
-            del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+    #         # for prv_domain in prv_domain_list:
+    #         prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+    #         prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+    #         # for del_domain in del_domain_list:
+    #         del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+    #         del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
 
-            eval_dict = compute_acc_for_df_eval(
-                eval_dict,
-                output,
-                label,
-                prv_domain_mask,
-                del_domain_mask,
-                domain,
-                self.domain_list,
-                self.device
-            ) 
-            if batch_idx == 0:
-                label_all = label
-                domain_all = domain
-                img_feat_all = img_feat
-                # input_all = input
+    #         eval_dict = compute_acc_for_df_eval(
+    #             eval_dict,
+    #             output,
+    #             label,
+    #             prv_domain_mask,
+    #             del_domain_mask,
+    #             domain,
+    #             self.domain_list,
+    #             self.device
+    #         ) 
+    #         if batch_idx == 0:
+    #             label_all = label
+    #             domain_all = domain
+    #             img_feat_all = img_feat
+    #             # input_all = input
 
-            else :
-                label_all = torch.cat((label_all, label))
-                domain_all = torch.cat((domain_all, domain))
-                img_feat_all = torch.cat((img_feat_all, img_feat))
-                # input_all = torch.cat((input_all, input))
+    #         else :
+    #             label_all = torch.cat((label_all, label))
+    #             domain_all = torch.cat((domain_all, domain))
+    #             img_feat_all = torch.cat((img_feat_all, img_feat))
+    #             # input_all = torch.cat((input_all, input))
             
-            # img_np = input.cpu().numpy()
-            # cv2_img = cv2.cvtColor (img_np, cv2.COLOR_RGB2BGR)
+    #         # img_np = input.cpu().numpy()
+    #         # cv2_img = cv2.cvtColor (img_np, cv2.COLOR_RGB2BGR)
             
 
-            # features = img_feat @ txt_feat.t()
-            # similarity_map = clip.get_similarity_map(features[:,1:, :], cv2_img.shape[:2])
+    #         # features = img_feat @ txt_feat.t()
+    #         # similarity_map = clip.get_similarity_map(features[:,1:, :], cv2_img.shape[:2])
 
-            # for b in range(similarity_map.shape[0]):
-            #     for n in range(similarity_map.shape[-1]):
-            #         vis = (similarity_map[b, :, :, n].cpu().numpy() * 255).astype('uint8')
-            #         vis = cv2.applyColorMap(vis, cv2.COLORMAP_JET)
-            #         vis = cv2_img * 0.4 + vis * 0.6
-            #         vis = cv2.cvtColor(vis.astype('uint8'), cv2.COLOR_BGR2RGB)
-            #         print('CLIP:', self.classnames[n])
-            #         plt.imsave(f"{self.classnames[n]}.png", vis)
+    #         # for b in range(similarity_map.shape[0]):
+    #         #     for n in range(similarity_map.shape[-1]):
+    #         #         vis = (similarity_map[b, :, :, n].cpu().numpy() * 255).astype('uint8')
+    #         #         vis = cv2.applyColorMap(vis, cv2.COLORMAP_JET)
+    #         #         vis = cv2_img * 0.4 + vis * 0.6
+    #         #         vis = cv2.cvtColor(vis.astype('uint8'), cv2.COLOR_BGR2RGB)
+    #         #         print('CLIP:', self.classnames[n])
+    #         #         plt.imsave(f"{self.classnames[n]}.png", vis)
 
 
-        # meta_data_cls_agno = []
-        # meta_data_cls_agno = []
-        # tag = f"{split}/cls-agnostic"
+    #     # meta_data_cls_agno = []
+    #     # meta_data_cls_agno = []
+    #     # tag = f"{split}/cls-agnostic"
 
-        # print(label_all.shape, img_feat_all.shape)
-        # for idx, (lbl, dlbl) in enumerate(zip(label_all, domain_all)):  
-        #     # if idx == (label_all.size(0) -1 ) :
-        #     #     meta_data_cls_agno.append(f"{lbl.item()}\t{dlbl.item()}")
-        #     # else:
-        #     meta_data_cls_agno.append([f"{lbl.item()}", f"{self.domain_list[dlbl.item()]}"])
+    #     # print(label_all.shape, img_feat_all.shape)
+    #     # for idx, (lbl, dlbl) in enumerate(zip(label_all, domain_all)):  
+    #     #     # if idx == (label_all.size(0) -1 ) :
+    #     #     #     meta_data_cls_agno.append(f"{lbl.item()}\t{dlbl.item()}")
+    #     #     # else:
+    #     #     meta_data_cls_agno.append([f"{lbl.item()}", f"{self.domain_list[dlbl.item()]}"])
 
-        # self.write_embedding(img_feat_all, meta_data_cls_agno, tag=tag, metadata_header=["Object_Class", "Domain_Class"])
+    #     # self.write_embedding(img_feat_all, meta_data_cls_agno, tag=tag, metadata_header=["Object_Class", "Domain_Class"])
 
-        for cls_id, clsname in enumerate(self.classnames):
-            cls_specific_index = (label_all == cls_id)
-            if torch.all(cls_specific_index == False):
-                pass
-            else:
-                domain_metadata = []
-                for d in domain_all[cls_specific_index]:
-                    domain_metadata.append(self.domain_list[int(d)])
-                tag = f"{split}/tsne-plot/{clsname}"
-                # self.write_embedding(img_feat[cls_specific_index], domain_metadata, input[cls_specific_index], global_step=batch_idx, tag=tag)
-                self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
+    #     for cls_id, clsname in enumerate(self.classnames):
+    #         cls_specific_index = (label_all == cls_id)
+    #         if torch.all(cls_specific_index == False):
+    #             pass
+    #         else:
+    #             domain_metadata = []
+    #             for d in domain_all[cls_specific_index]:
+    #                 domain_metadata.append(self.domain_list[int(d)])
+    #             tag = f"{split}/tsne-plot/{clsname}"
+    #             # self.write_embedding(img_feat[cls_specific_index], domain_metadata, input[cls_specific_index], global_step=batch_idx, tag=tag)
+    #             self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
 
-        results = self.evaluator.evaluate()
-        if not self.cfg.NO_FORGET:
-            print("==========peservation or delete acc===============")
-            for name in ["prv", "del"]:
-                acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
-                print(f"{name} : {acc:.2f}")
-            print("==============domain specific acc=================")
-            for domain_name in self.domain_list:
-                acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
-                print(f"{domain_name} : {acc:.2f}")
-            print("===================================================")
+    #     results = self.evaluator.evaluate()
+    #     if not self.cfg.NO_FORGET:
+    #         print("==========peservation or delete acc===============")
+    #         for name in ["prv", "del"]:
+    #             acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
+    #             print(f"{name} : {acc:.2f}")
+    #         print("==============domain specific acc=================")
+    #         for domain_name in self.domain_list:
+    #             acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
+    #             print(f"{domain_name} : {acc:.2f}")
+    #         print("===================================================")
 
-        for k, v in results.items():
-            tag = f"{split}/{k}"
-            self.write_scalar(tag, v, self.epoch)
+    #     for k, v in results.items():
+    #         tag = f"{split}/{k}"
+    #         self.write_scalar(tag, v, self.epoch)
 
-        return list(results.values())[0]
+    #     return list(results.values())[0]
     
     def write_embedding(self, mat, meta_data, label_img=None, global_step=None, tag=None, metadata_header=None):
         if self._writer is None:
