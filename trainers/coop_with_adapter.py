@@ -250,15 +250,12 @@ class CustomCLIP(nn.Module):
         tokenized_prompts = self.tokenized_prompts
         text_features = self.text_encoder(prompts, tokenized_prompts)
 
-        image_features = self.domain_separate_module(image_features)
-
-
         # domain_logit = self.domain_classifier(image_features)
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
-
+        image_features = self.domain_separate_module(image_features)
 
         logit_scale = self.logit_scale.exp()
         logits = logit_scale * image_features @ text_features.t()
