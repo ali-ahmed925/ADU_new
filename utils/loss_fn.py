@@ -25,7 +25,7 @@ def entropy_local_topk(p, label, num_of_local_feature, top_k=3):
     p = F.softmax(p, dim=-1)
     pred_topk = torch.topk(p, k=top_k, dim=1)[1]
     contains_label = pred_topk.eq(torch.tensor(label_repeat).unsqueeze(1)).any(dim=1)
-    selected_p = p[contains_label]
+    selected_p = p[contains_label] # ~だったら反転 selected_p = p[~contains_label] LoCoOpはそう
     if selected_p.shape[0] == 0:
         return torch.tensor([0]).cuda()
     return -torch.mean(torch.sum(selected_p * torch.log(selected_p + 1e-5), 1))
