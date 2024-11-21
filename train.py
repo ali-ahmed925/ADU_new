@@ -27,6 +27,9 @@ import datasets.imagenetv2
 import datasets.imagenet_a
 import datasets.imagenet_r
 import datasets.domainnet_mini_df
+import datasets.vlcs_df
+import datasets.office31_df
+import datasets.visda17_df
 
 import trainers.coop
 import trainers.cocoop
