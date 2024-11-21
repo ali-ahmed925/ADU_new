@@ -26,6 +26,8 @@ from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from torch.nn import functional as F
 from torch.cuda.amp import GradScaler, autocast
 
+import pandas as pd
+
 class TrainerDF(SimpleTrainer):
     def __init__(self, cfg):
         super().__init__(cfg)
@@ -43,15 +45,42 @@ class TrainerDF(SimpleTrainer):
             self.domain_list = [
                 "clipart", "painting", "real", "sketch"
             ]
+        elif cfg.DATASET.NAME == "VLCSDF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
+            self.domain_list = ["caltech", "labelme", "pascal", "sun"]
+            
         elif cfg.DATASET.NAME == "PACSDF":
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = ["art_painting", "cartoon", "photo", "sketch"]
+        
+        elif cfg.DATASET.NAME == "Office31DF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
+            self.domain_list = ["amazon", "webcam", "dslr"]
+        elif cfg.DATASET.NAME == "VisDA17DF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
+            self.domain_list = ["synthetic", "real"]
             # self.classnames = [
             #     "dog", "elephant", "giraffe", "guitar", "horse", "house", "person"
             # ]
         assert (set(self.domain_list) | set(self.del_domain_list)) == set(self.domain_list)
         self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
         self.classnames = self.dm.dataset.classnames
+        
+        self.use_domain_classifier_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
+        self.use_nearest_neighbor_loss = cfg.USER_NEAREST_NEIGHBOR_LOSS
+        self.is_domain_divided = cfg.IS_DOMAIN_DIVIDED
+        if self.use_nearest_neighbor_loss:
+            self.nnl = SoftNearestNeighborsLoss()
+
+        self.csv_file_path = cfg.CSV_FILE_PATH
+        if not osp.exists(self.csv_file_path):
+            row_names = ["Prv Acc.", "Del Err.", "Del Acc.", "Specific Acc."]
+            self.df = pd.DataFrame(index=row_names)
+            self.df.to_csv(self.csv_file_path)
+            
+        else:
+            print(f"File already exists: {self.csv_file_path}")
+            self.df = pd.read_csv(self.csv_file_path, index_col=0)
 
     def run_epoch(self):
         self.set_model_mode("train")
@@ -108,11 +137,19 @@ class TrainerDF(SimpleTrainer):
             self.scaler.step(self.optim)
             self.scaler.update()
         else:
-            output, img_feat, txt_feat = self.model(image)
+            if self.use_domain_classifier_loss :
+                output, img_feat, txt_feat, domain_output = self.model(image)
+            else :
+                output, img_feat, txt_feat = self.model(image)
+
             if not self.cfg.NO_FORGET:
                 entropy = Entropy()
                 false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
                 
+                ###########################################
+                # preservation loss
+                # deletion loss
+                ############################################
                 # for prv_domain in prv_domain_list:
                 prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
                 prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
@@ -129,12 +166,24 @@ class TrainerDF(SimpleTrainer):
                 else :
                     loss_del = entropy(output[del_domain_mask])
                 loss = loss_prv - loss_del
-            else :
-                # print(type(output))
-                # print(type(label))
 
-                # print(output.shape)
-                # print(label.shape)
+                # select target label to calculate domain class label
+                if self.is_domain_divided:
+                    target_label = domain
+                else :
+                    target_label = prv_domain_mask.int().long()
+
+                ######################################################################
+                # domain loss (domain classifier loss, nearest neighbor loss or both)
+                #####################################################################
+
+                if self.use_domain_classifier_loss :
+                    domain_cls_loss = F.cross_entropy(domain_output, target_label)
+                    loss += domain_cls_loss
+                if self.use_nearest_neighbor_loss :
+                    domain_nn_loss = self.nnl(img_feat, target_label)
+                    loss += domain_nn_loss
+            else :
                 loss = F.cross_entropy(output, label)
             self.model_backward_and_update(loss)
         
@@ -143,6 +192,8 @@ class TrainerDF(SimpleTrainer):
                 "loss": loss.item(),
                 "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
                 "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
+                "loss_domain_cls": domain_cls_loss.item() if self.use_domain_classifier_loss else 0,
+                "loss_domain_nn": domain_nn_loss.item() if self.use_nearest_neighbor_loss else 0,
                 # "acc": compute_accuracy(output, label)[0].item(),
             }
             acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
@@ -220,7 +271,10 @@ class TrainerDF(SimpleTrainer):
         eval_dict = {}
         for batch_idx, batch in enumerate(tqdm(data_loader)):
             input, label, domain = self.parse_batch_test(batch)
-            output, img_feat, txt_feat = self.model_inference(input)
+            if self.use_domain_classifier_loss :
+                output, img_feat, txt_feat, _ = self.model_inference(input)
+            else :
+                output, img_feat, txt_feat = self.model_inference(input)
             self.evaluator.process(output, label)
 
             # for prv_domain in prv_domain_list:
@@ -265,6 +319,43 @@ class TrainerDF(SimpleTrainer):
                 self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
 
         results = self.evaluator.evaluate()
+        #############################################################
+        #
+        # add csv files
+        #
+        ##############################################################
+        csv_col_name = ""
+        for idx, dname in enumerate(self.del_domain_list):
+            if idx == len(self.domain_list) - 1:
+                csv_col_name += f"{dname}"
+            else :
+                csv_col_name += f"{dname} "
+
+        if csv_col_name not in self.df.columns:
+            new_column_values = [
+                round((eval_dict["correct_prv"] / eval_dict["total_prv"])*100, 3),
+                round((1 - eval_dict["correct_del"] / eval_dict["total_del"])*100, 3), 
+                round((eval_dict["correct_del"] / eval_dict["total_del"])*100, 3)
+            ]
+            specific_acc = "("
+            for idx, dname in enumerate(self.del_domain_list):
+                sp_acc = (eval_dict[f"correct_{dname}"] / eval_dict[f"total_{dname}"])*100
+                if idx == len(self.del_domain_list) - 1:
+                    specific_acc += f"{sp_acc:.3f})"
+                else:
+                    specific_acc += f"{sp_acc:.3f}, "
+
+            new_column_values.append(specific_acc)
+
+            self.df[csv_col_name] = new_column_values
+            self.df.to_csv(self.csv_file_path)
+
+        ############################################################
+        #
+        # print result
+        #
+        ############################################################
+
         if not self.cfg.NO_FORGET:
             print("==========peservation or delete acc===============")
             for name in ["prv", "del"]:
@@ -290,34 +381,9 @@ class TrainerDF(SimpleTrainer):
         else:
             self._writer.add_embedding(mat, meta_data, label_img, global_step, tag)
 from utils.loss_fn import entropy_local_topk
-class TrainerDF_Local(SimpleTrainer):
+class TrainerDF_Local(TrainerDF):
     def __init__(self, cfg):
         super().__init__(cfg)
-        if cfg.DATASET.NAME == "OfficeHomeDF":
-            self.domain_list = ["art", "clipart", "product", "real_world"]
-            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
-
-        elif cfg.DATASET.NAME == "DomainNetDF":
-            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
-            self.domain_list = [
-                "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
-            ]
-        elif cfg.DATASET.NAME == "DomainNetMiniDF":
-            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
-            self.domain_list = [
-                "clipart", "painting", "real", "sketch"
-            ]
-    
-        elif cfg.DATASET.NAME == "PACSDF":
-            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
-            self.domain_list = ["art_painting", "cartoon", "photo", "sketch"]
-            # self.classnames = [
-            #     "dog", "elephant", "giraffe", "guitar", "horse", "house", "person"
-            # ]
-        assert (set(self.domain_list) | set(self.del_domain_list)) == set(self.domain_list)
-        self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
-        self.classnames = self.dm.dataset.classnames
-
     def run_epoch(self):
         self.set_model_mode("train")
         losses = MetricMeter()
@@ -387,8 +453,13 @@ class TrainerDF_Local(SimpleTrainer):
                 
                 if torch.equal(false_check_tensor, prv_domain_mask):
                     loss_prv = 0
+                    loss_prv_local = 0
                 else :
+                    num_of_local_feature = local_feat.shape[1]
+                    batch_size_prv = local_feat[prv_domain_mask].shape[0]
+                    output_local = local_feat[del_domain_mask].view(batch_size_prv*num_of_local_feature, -1)
                     loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
+                    loss_prv_local = entropy_local_topk(output_local, label[prv_domain_mask],num_of_local_feature)
                 if torch.equal(false_check_tensor, del_domain_mask):
                     loss_del = 0
                     loss_del_local = 0
@@ -398,7 +469,7 @@ class TrainerDF_Local(SimpleTrainer):
                     output_local = local_feat[del_domain_mask].view(batch_size_del*num_of_local_feature, -1)
                     loss_del = entropy(output[del_domain_mask])
                     loss_del_local = entropy_local_topk(output_local, label[del_domain_mask],num_of_local_feature)
-                loss = loss_prv - loss_del - loss_del_local
+                loss = loss_prv + loss_prv_local - loss_del - loss_del_local
             else :
                 # print(type(output))
                 # print(type(label))
@@ -414,6 +485,7 @@ class TrainerDF_Local(SimpleTrainer):
                 "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
                 "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
                 "loss_del_local": loss_del_local.item() if isinstance(loss_del_local, torch.Tensor) else loss_del_local,
+                "loss_prv_local": loss_prv_local.item() if isinstance(loss_prv_local, torch.Tensor) else loss_prv_local,
                 # "acc": compute_accuracy(output, label)[0].item(),
             }
             acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
@@ -431,27 +503,6 @@ class TrainerDF_Local(SimpleTrainer):
             self.update_lr()
 
         return loss_summary
-
-    def parse_batch_train(self, batch):
-        input = batch["img"]
-        label = batch["label"]
-        domain = batch["domain"]
-        
-        input = input.to(self.device)
-        label = label.to(self.device)
-        domain = domain.to(self.device)
-        return input, label, domain
-
-    def parse_batch_test(self, batch):
-        input = batch["img"]
-        label = batch["label"]
-        domain = batch["domain"]
-
-        input = input.to(self.device)
-        label = label.to(self.device)
-        domain = domain.to(self.device)
-
-        return input, label, domain
     
     def set_tensorboard(self):
         if not self.cfg.EVAL_ONLY:
@@ -536,6 +587,37 @@ class TrainerDF_Local(SimpleTrainer):
                 self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
 
         results = self.evaluator.evaluate()
+        #############################################################
+        #
+        # add csv files
+        #
+        ##############################################################
+        csv_col_name = ""
+        for idx, dname in enumerate(self.del_domain_list):
+            if idx == len(self.domain_list) - 1:
+                csv_col_name += f"{dname}"
+            else :
+                csv_col_name += f"{dname} "
+
+        if csv_col_name not in self.df.columns:
+            new_column_values = [
+                round((eval_dict["correct_prv"] / eval_dict["total_prv"])*100, 3),
+                round((1 - eval_dict["correct_del"] / eval_dict["total_del"])*100, 3), 
+                round((eval_dict["correct_del"] / eval_dict["total_del"])*100, 3)
+            ]
+            specific_acc = "("
+            for idx, dname in enumerate(self.del_domain_list):
+                sp_acc = (eval_dict[f"correct_{dname}"] / eval_dict[f"total_{dname}"])*100
+                if idx == len(self.del_domain_list) - 1:
+                    specific_acc += f"{sp_acc:.3f})"
+                else:
+                    specific_acc += f"{sp_acc:.3f}, "
+
+            new_column_values.append(specific_acc)
+
+            self.df[csv_col_name] = new_column_values
+            self.df.to_csv(self.csv_file_path)
+
         if not self.cfg.NO_FORGET:
             print("==========peservation or delete acc===============")
             for name in ["prv", "del"]:

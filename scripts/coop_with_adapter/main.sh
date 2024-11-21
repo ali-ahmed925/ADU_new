@@ -24,10 +24,11 @@ DOMAIN_SEC=$(IFS=-; echo "${DOMAIN_LIST[*]}")
 # DOMAIN_COUNT=$(echo "$DOMAIN_LIST" | wc -w)
 DOMAIN_COUNT=${#DOMAIN_LIST[@]}
 TODAY=$(date +"%Y%m%d_%H%M%S")
-
+SHOTS=16
 for SEED in 1
 do
-    DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}/seed${SEED}/${TODAY}
+    DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_csc${CSC}_ctp${CTP}_shots${SHOTS}/seed${SEED}/${TODAY}
+    CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_nctx${NCTX}_csc${CSC}_ctp${CTP}_shots${SHOTS}_seed${SEED}.csv
     # DIR=./test/${TODAY}
     if [ -d "$DIR" ]; then
         echo "Results are available in ${DIR}. Skip this job"
@@ -41,6 +42,8 @@ do
         --dataset-config-file configs/datasets/${DATASET}.yaml \
         --forget_domains "${DOMAIN_LIST[@]}" \
         --output-dir ${DIR} \
+        --csv_file_path ${CSV_FILE_PATH} \
+        --num_shots ${SHOTS} \
         TRAINER.COOP.N_CTX ${NCTX} \
         TRAINER.COOP.CSC ${CSC} \
         TRAINER.COOP.CLASS_TOKEN_POSITION ${CTP} \

@@ -132,9 +132,9 @@ class CustomCLIP(nn.Module):
         text_features = self.embeddings.return_fixed_embeddings().cuda()
         image_features = self.image_encoder(image.type(self.dtype))
 
-        image_features = self.domain_separate_module(image_features)
-
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        image_features = self.domain_separate_module(image_features)
+        
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         logits = logit_scale * image_features @ text_features.t()
 

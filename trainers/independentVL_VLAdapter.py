@@ -171,6 +171,13 @@ class CustomCLIP(nn.Module):
         self.dtype = clip_model.dtype
         self.vision_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
         self.text_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        if cfg.USE_DOMAIN_CLASIFIER_LOSS:
+            if cfg.IS_DOMAIN_DIVIDED:
+                self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
+            else :
+                self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+            self.domain_classifier.to(self.dtype)
+        self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
 
     def forward(self, image, label=None):
         tokenized_prompts = self.tokenized_prompts
@@ -187,6 +194,9 @@ class CustomCLIP(nn.Module):
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         logits = logit_scale * image_features @ text_features.t()
 
+        if self.use_domain_cls_loss:
+            domain_logit = self.domain_classifier(image_features)
+            return logits, image_features, text_features, domain_logit
         # if self.prompt_learner.training:
         #     return F.cross_entropy(logits, label)
 
@@ -236,6 +246,8 @@ class IVLP_VL_Adapter(TrainerDF):
                 if "VPT" in name:
                     param.requires_grad_(True)
                 elif "adapter" in name:
+                    param.requires_grad_(True)
+                elif "domain_classifier" in name:
                     param.requires_grad_(True)
                 else:
                     param.requires_grad_(False)

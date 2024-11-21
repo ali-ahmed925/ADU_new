@@ -574,11 +574,19 @@ class Transformer(nn.Module):
                                                                               text_layer, i, design_details)
                                              for i in range(layers)])
         elif current_trainer in 'IVLP':
-            self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
+            if current_trainer in 'Local':
+                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
                                                                          text_layer, i,
                                                                          design_details) if prompts_needed > i
-                                             else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
+                                             else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
                                                                               text_layer, i, design_details)
+                                             for i in range(layers)])
+            else :
+                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
+                                                                            text_layer, i,
+                                                                            design_details) if prompts_needed > i
+                                                else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
+                                                                                text_layer, i, design_details)
                                              for i in range(layers)])
         elif current_trainer == 'MaPLe':
             self.resblocks = nn.Sequential(

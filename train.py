@@ -27,6 +27,9 @@ import datasets.imagenetv2
 import datasets.imagenet_a
 import datasets.imagenet_r
 import datasets.domainnet_mini_df
+import datasets.vlcs_df
+import datasets.office31_df
+import datasets.visda17_df
 
 import trainers.coop
 import trainers.cocoop
@@ -142,6 +145,11 @@ def extend_cfg(cfg, args):
     cfg.EVAL_ONLY = args.eval_only
 
     cfg.LMD_DOMAIN_LOSS = args.lmd_domain_loss
+
+    cfg.USE_DOMAIN_CLASIFIER_LOSS = args.use_domain_cls_loss
+    cfg.USER_NEAREST_NEIGHBOR_LOSS = args.use_nearest_neighbor_loss
+    cfg.IS_DOMAIN_DIVIDED = args.is_domain_divided
+    cfg.CSV_FILE_PATH = args.csv_file_path
 
     cfg.TRAINER.COOP_W_ADAPTER = CN()
 
@@ -314,7 +322,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--is_block_shuffle", action="store_false", help="ON/OFF either block shuffled or not"
+        "--is_block_shuffle", action="store_true", help="ON/OFF either block shuffled or not"
     )
     parser.add_argument(
         "--grid_num", type=int, help="select grid number 1 < grid_num < 224 ??", default=8
@@ -342,6 +350,17 @@ if __name__ == "__main__":
         type=float,
         default=1.0
     )
+
+    parser.add_argument(
+        "--use_domain_cls_loss", action="store_true", help="default is False"
+    )
+    parser.add_argument(
+        "--use_nearest_neighbor_loss", action="store_true"
+    )
+    parser.add_argument(
+        "--is_domain_divided", action="store_true", help="defult is False"
+    )
+    parser.add_argument("--csv_file_path", type=str, default="default.csv")
     
     parser.add_argument(
         "opts",
