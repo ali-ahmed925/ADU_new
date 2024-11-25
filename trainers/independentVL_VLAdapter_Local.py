@@ -60,7 +60,7 @@ class TextEncoder(nn.Module):
     def forward(self, prompts, tokenized_prompts):
         x = prompts + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.transformer(x)
+        x, _, _, _ = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.ln_final(x).type(self.dtype)
 
@@ -166,6 +166,7 @@ class CustomCLIP(nn.Module):
         self.prompt_learner = VLPromptLearner(cfg, classnames, clip_model)
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = clip_model.visual
+        # print(self.image_encoder)
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
@@ -250,6 +251,7 @@ class IVLP_VL_Adapter_Local(TrainerDF_Local):
                 # Make sure that VPT prompts are updated
                 if "VPT" in name:
                     param.requires_grad_(True)
+                    print(name)
                 elif "adapter" in name:
                     param.requires_grad_(True)
                 elif "domain_classifier" in name:
