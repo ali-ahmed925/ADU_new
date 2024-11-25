@@ -65,6 +65,7 @@ import trainers.independentVL_VLAdapter
 import trainers.independentVL_VLAdapter_NNL
 import trainers.independentVL_VLAdapter_DC
 import trainers.independentVL_VLAdapter_NNL_Divided
+import trainers.independentVL_VLAdapter_Local
 
 def print_args(args, cfg):
     print("***************")
@@ -141,6 +142,12 @@ def extend_cfg(cfg, args):
     
     cfg.TOPK = args.topk
 
+    cfg.ENTROPY_MASK = args.entropy_mask
+    cfg.BLOCK_SHUFFLE_SELECTION = args.block_shuffle_selection
+    cfg.BLOCK_SHUFFLE_SELECTION_NONEXP = args.block_shuffle_selection_nonexp
+    cfg.MASKED_DC = args.masked_dc
+    cfg.MASKED_NN = args.masked_nn
+
     cfg.NO_FORGET = args.no_forget
     cfg.EVAL_ONLY = args.eval_only
 
@@ -150,6 +157,9 @@ def extend_cfg(cfg, args):
     cfg.USER_NEAREST_NEIGHBOR_LOSS = args.use_nearest_neighbor_loss
     cfg.IS_DOMAIN_DIVIDED = args.is_domain_divided
     cfg.CSV_FILE_PATH = args.csv_file_path
+
+    cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
+    cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False
 
     cfg.TRAINER.COOP_W_ADAPTER = CN()
 
@@ -339,8 +349,17 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--block_shuffle_selection",
+        action="store_true", help="default is False"
+                        )
+
+    parser.add_argument(
+        "--block_shuffle_selection_nonexp",
+        action="store_true", help="default is False"
+                        )
+    parser.add_argument(
         "--topk",
-        default=3,
+        default=100,
         type=int,
         help="select local feat topk "
     )
@@ -360,6 +379,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--is_domain_divided", action="store_true", help="defult is False"
     )
+
+    parser.add_argument(
+        "--entropy_mask", action="store_true", help="default is False"
+    )
+
+    parser.add_argument(
+        "--masked_dc", action="store_true", help="default is False"
+    )
+
+    parser.add_argument(
+        "--masked_nn", action="store_true", help="default is False"
+    )
+
     parser.add_argument("--csv_file_path", type=str, default="default.csv")
     
     parser.add_argument(

@@ -20,13 +20,36 @@ from dassl.evaluation import build_evaluator
 
 from dassl.engine import SimpleTrainer
 
-from utils.loss_fn import Entropy, cossine_embedding_loss
+from utils.loss_fn import Entropy, cossine_embedding_loss, get_entropy, get_entropy_local
 from dassl.metrics.accuracy import compute_accuracy
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from torch.nn import functional as F
 from torch.cuda.amp import GradScaler, autocast
 
+from utils.data_augmentation import get_jigsaw_tensor
 import pandas as pd
+from torchvision.transforms import v2
+from clip import clip
+
+def load_clip_to_cpu_expert(cfg):
+    backbone_name = cfg.MODEL.BACKBONE.NAME
+    url = clip._MODELS[backbone_name]
+    model_path = clip._download(url)
+
+    try:
+        # loading JIT archive
+        model = torch.jit.load(model_path, map_location="cpu").eval()
+        state_dict = None
+
+    except RuntimeError:
+        state_dict = torch.load(model_path, map_location="cpu")
+    design_details = {"trainer": 'CoOp',
+                      "vision_depth": 0,
+                      "language_depth": 0, "vision_ctx": 0,
+                      "language_ctx": 0}
+    model = clip.build_model(state_dict or model.state_dict(), design_details)
+
+    return model
 
 class TrainerDF(SimpleTrainer):
     def __init__(self, cfg):
@@ -384,6 +407,28 @@ from utils.loss_fn import entropy_local_topk
 class TrainerDF_Local(TrainerDF):
     def __init__(self, cfg):
         super().__init__(cfg)
+        self.topk = cfg.TOPK
+        self.entropy_mask = cfg.ENTROPY_MASK
+        self.masked_dc = cfg.MASKED_DC
+        self.masked_nn = cfg.MASKED_NN
+
+        self.num_vision_context = cfg.TRAINER.IVLP.N_CTX_VISION
+        self.block_shuffle_selection = cfg.BLOCK_SHUFFLE_SELECTION
+        self.grid_num = cfg.GRID
+        self.resize = v2.Resize(size=224)
+        self.vflip = v2.RandomVerticalFlip(p=1)
+        self.blur = v2.GaussianBlur(kernel_size=(5,9), sigma=(10.,30.))
+
+        if self.block_shuffle_selection :
+            self.model_expert = load_clip_to_cpu_expert(cfg)
+            self.model_expert.cuda()
+            self.model_expert.eval()
+    
+        self.block_shuffle_selection_non_expert=cfg.BLOCK_SHUFFLE_SELECTION_NONEXP
+        if self.block_shuffle_selection_non_expert:
+            
+            pass
+
     def run_epoch(self):
         self.set_model_mode("train")
         losses = MetricMeter()
@@ -439,7 +484,10 @@ class TrainerDF_Local(TrainerDF):
             self.scaler.step(self.optim)
             self.scaler.update()
         else:
-            output, img_feat, local_feat, txt_feat = self.model(image)
+            if self.use_domain_classifier_loss:
+                output, local_output, img_feat, txt_feat, local_img_feat, domain_logits = self.model(image)
+            else :
+                output, local_output, img_feat, txt_feat, local_img_feat = self.model(image)
             if not self.cfg.NO_FORGET:
                 entropy = Entropy()
                 false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
@@ -453,23 +501,141 @@ class TrainerDF_Local(TrainerDF):
                 
                 if torch.equal(false_check_tensor, prv_domain_mask):
                     loss_prv = 0
-                    loss_prv_local = 0
                 else :
-                    num_of_local_feature = local_feat.shape[1]
-                    batch_size_prv = local_feat[prv_domain_mask].shape[0]
-                    output_local = local_feat[del_domain_mask].view(batch_size_prv*num_of_local_feature, -1)
+                    # num_of_local_feature = local_feat.shape[1]
+                    # batch_size_prv = local_feat[prv_domain_mask].shape[0]
+                    # output_local = local_feat[del_domain_mask].view(batch_size_prv*num_of_local_feature, -1)
                     loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
-                    loss_prv_local = entropy_local_topk(output_local, label[prv_domain_mask],num_of_local_feature)
+                    # loss_prv_local = entropy_local_topk(output_local, label[prv_domain_mask],num_of_local_feature)
                 if torch.equal(false_check_tensor, del_domain_mask):
                     loss_del = 0
-                    loss_del_local = 0
                 else :
-                    num_of_local_feature = local_feat.shape[1]
-                    batch_size_del = local_feat[del_domain_mask].shape[0]
-                    output_local = local_feat[del_domain_mask].view(batch_size_del*num_of_local_feature, -1)
+                    # num_of_local_feature = local_feat.shape[1]
+                    # batch_size_del = local_feat[del_domain_mask].shape[0]
+                    # output_local = local_feat[del_domain_mask].view(batch_size_del*num_of_local_feature, -1)
                     loss_del = entropy(output[del_domain_mask])
-                    loss_del_local = entropy_local_topk(output_local, label[del_domain_mask],num_of_local_feature)
-                loss = loss_prv + loss_prv_local - loss_del - loss_del_local
+                    # loss_del_local = entropy_local_topk(output_local, label[del_domain_mask],num_of_local_feature)
+                loss = loss_prv - loss_del
+
+                if self.is_domain_divided:
+                    target_label = domain
+                else :
+                    target_label = prv_domain_mask.int().long()
+
+                ######################################################################
+                # domain loss (domain classifier loss, nearest neighbor loss or both)
+                #####################################################################
+                if self.entropy_mask:
+                    # num_of_local_feature = local_output.shape[1]
+                    # batch_size = local_output.shape[0]
+                    # entropy_masks = get_masksk(local_output, label, num_of_local_feature)
+                    
+                    local_entropy = get_entropy_local(local_output[:,self.num_vision_context:]) # exclude context vector
+                    topk_index = torch.topk(local_entropy, k=self.topk, dim=1)[1]
+                    # print(local_output.shape)
+                    ###########################################
+                    ## mask preparation
+                    ###########################################
+                    mask = torch.zeros_like(local_entropy)
+                    mask.scatter_(1, topk_index, 1)
+                    patch_size = int(local_entropy.size(1)**0.5)
+                    
+                    px_per_patch = int(image.size(2) / patch_size)
+                
+                    mask = mask.repeat_interleave(px_per_patch, dim=1)
+                
+                    mask = mask.view(-1, patch_size, image.size(2)).repeat_interleave(px_per_patch, dim=1)
+                    
+                    ############################################
+                    ## masked image generation
+                    ############################################
+                    masked_image = image * mask.unsqueeze(1)
+                    
+                    if self.use_domain_classifier_loss:
+                        _, _, img_feat_masked, _, _, domain_logits_masked = self.model(masked_image)
+                    else :
+                        _, _, img_feat_masked, _, _ = self.model(masked_image)
+                elif self.block_shuffle_selection :
+                    destructed_image = image
+                    destructed_image = self.blur(image)
+                    destructed_image = get_jigsaw_tensor(destructed_image, resize=(224,224), grid=self.grid_num)
+                    destructed_image = self.resize(destructed_image)
+                    domain_specific_features = self.model_expert.encode_image(destructed_image)
+                    domain_specific_features = domain_specific_features.unsqueeze(1)
+                    domain_focus_simmap = torch.matmul(local_img_feat[:, self.num_vision_context:,:], domain_specific_features.transpose(-1, -2)).squeeze(-1)
+                    # domain_focus_simmap = local_img_feat[:,self.num_vision_context:] @ domain_specific_features
+
+                    topk_index = torch.topk(domain_focus_simmap, k=self.topk, dim=1)[1]
+                    # print(local_output.shape)
+                    ###########################################
+                    ## mask preparation
+                    ###########################################
+                    mask = torch.zeros_like(domain_focus_simmap)
+                    mask.scatter_(1, topk_index, 1)
+                    patch_size = int(domain_focus_simmap.size(1)**0.5)
+                    
+                    px_per_patch = int(image.size(2) / patch_size)
+                
+                    mask = mask.repeat_interleave(px_per_patch, dim=1)
+                
+                    mask = mask.view(-1, patch_size, image.size(2)).repeat_interleave(px_per_patch, dim=1)
+                    ############################################
+                    ## masked image generation
+                    ############################################
+                    masked_image = image * mask.unsqueeze(1)
+                    
+                    if self.use_domain_classifier_loss:
+                        _, _, img_feat_masked, _, _, domain_logits_masked = self.model(masked_image)
+                    else :
+                        _, _, img_feat_masked, _, _ = self.model(masked_image)
+                
+                elif self.block_shuffle_selection_non_expert:
+                    destructed_image = image
+                    destructed_image = self.blur(image)
+                    destructed_image = get_jigsaw_tensor(destructed_image, resize=(224,224), grid=self.grid_num)
+                    destructed_image = self.resize(destructed_image)
+                    domain_specific_features, _ = self.model.image_encoder(destructed_image.half())
+                    domain_specific_features = domain_specific_features.unsqueeze(1)
+                    domain_focus_simmap = torch.matmul(local_img_feat[:, self.num_vision_context:,:], domain_specific_features.transpose(-1, -2)).squeeze(-1)
+                    # domain_focus_simmap = local_img_feat[:,self.num_vision_context:] @ domain_specific_features
+
+                    topk_index = torch.topk(domain_focus_simmap, k=self.topk, dim=1)[1]
+                    # print(local_output.shape)
+                    ###########################################
+                    ## mask preparation
+                    ###########################################
+                    mask = torch.zeros_like(domain_focus_simmap)
+                    mask.scatter_(1, topk_index, 1)
+                    patch_size = int(domain_focus_simmap.size(1)**0.5)
+                    
+                    px_per_patch = int(image.size(2) / patch_size)
+                
+                    mask = mask.repeat_interleave(px_per_patch, dim=1)
+                
+                    mask = mask.view(-1, patch_size, image.size(2)).repeat_interleave(px_per_patch, dim=1)
+                    ############################################
+                    ## masked image generation
+                    ############################################
+                    masked_image = image * mask.unsqueeze(1)
+                    
+                    if self.use_domain_classifier_loss:
+                        _, _, img_feat_masked, _, _, domain_logits_masked = self.model(masked_image)
+                    else :
+                        _, _, img_feat_masked, _, _ = self.model(masked_image)
+
+                if self.use_domain_classifier_loss :
+                    if self.masked_dc:
+                        domain_cls_loss = F.cross_entropy(domain_logits_masked, target_label)
+                    else:
+                        domain_cls_loss = F.cross_entropy(domain_logits, target_label)
+                    loss += domain_cls_loss
+                if self.use_nearest_neighbor_loss :
+                    if self.masked_nn:
+                        domain_nn_loss = self.nnl(img_feat_masked, target_label)
+                    else :
+                        domain_nn_loss = self.nnl(img_feat, target_label)
+                    loss += domain_nn_loss
+
             else :
                 # print(type(output))
                 # print(type(label))
@@ -484,8 +650,8 @@ class TrainerDF_Local(TrainerDF):
                 "loss": loss.item(),
                 "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
                 "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
-                "loss_del_local": loss_del_local.item() if isinstance(loss_del_local, torch.Tensor) else loss_del_local,
-                "loss_prv_local": loss_prv_local.item() if isinstance(loss_prv_local, torch.Tensor) else loss_prv_local,
+                "loss_domain_cls": domain_cls_loss.item() if self.use_domain_classifier_loss else 0,
+                "loss_domain_nn": domain_nn_loss.item() if self.use_nearest_neighbor_loss else 0,
                 # "acc": compute_accuracy(output, label)[0].item(),
             }
             acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
@@ -542,7 +708,11 @@ class TrainerDF_Local(TrainerDF):
         eval_dict = {}
         for batch_idx, batch in enumerate(tqdm(data_loader)):
             input, label, domain = self.parse_batch_test(batch)
-            output, img_feat, local_feat, txt_feat = self.model_inference(input)
+            # output, img_feat, local_feat, txt_feat = self.model_inference(input)
+            if self.use_domain_classifier_loss:
+                output, local_output, img_feat, txt_feat, local_img_feat, domain_logits = self.model_inference(input)
+            else :
+                output, local_output, img_feat, txt_feat, local_img_feat = self.model_inference(input)
             self.evaluator.process(output, label)
 
             # for prv_domain in prv_domain_list:
@@ -587,6 +757,11 @@ class TrainerDF_Local(TrainerDF):
                 self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
 
         results = self.evaluator.evaluate()
+        #############################################################
+        #
+        # add csv files
+        #
+        ##############################################################
         #############################################################
         #
         # add csv files
