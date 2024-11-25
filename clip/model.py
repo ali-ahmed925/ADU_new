@@ -557,6 +557,87 @@ class ResidualAttentionBlock_MaPLe(nn.Module):
         x = x + self.mlp(self.ln_2(x))
         return [x, compound_prompts_deeper, counter]  # return again as a list, so that nn.seq can work
 
+class ResidualAttentionBlock_IVLP_Local_PatchSelection(nn.Module):
+    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, add_prompt=False, text_layer=False,i=0, design_details=None) -> NoneType:
+        super().__init__()
+
+        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.ln_1 = LayerNorm(d_model)
+        self.mlp = nn.Sequential(OrderedDict([
+            ("c_fc", nn.Linear(d_model, d_model * 4)),
+            ("gelu", QuickGELU()),
+            ("c_proj", nn.Linear(d_model * 4, d_model))
+        ]))
+        self.ln_2 = LayerNorm(d_model)
+
+        self.text_layer = text_layer
+        self.attn_mask = attn_mask
+
+        if i != 0:
+            self.add_prompt = add_prompt
+            if self.add_prompt:
+                if self.text_layer:
+                    self.n_ctx_text = design_details["language_ctx"]  # hyperparameter
+                    ctx_vectors = torch.empty(self.n_ctx_text, d_model)
+                else:
+                    self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
+                    ctx_vectors = torch.empty(self.n_ctx_visual, d_model)
+                # Code snippet for per layer visual prompts
+                nn.init.normal_(ctx_vectors, std=0.02)
+                self.VPT_shallow = nn.Parameter(ctx_vectors)
+        else:
+            self.add_prompt = False
+
+
+    def attention(self, x: torch.Tensor) -> torch.Tensor:
+        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
+        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
+
+    def attention_weight(self, x: torch.Tensor) -> torch.Tensor:  # ADDED
+        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
+        return self.attn(x, x, x, need_weights=True, attn_mask=self.attn_mask)[1]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.add_prompt:
+            # Also see if this is textual transformer layer or not
+            if not self.text_layer:
+                # Remove the outputs produced by learnable tokens of previous layer
+                prefix = x[0:x.shape[0] - self.n_ctx_visual, :, :]
+                # Create/configure learnable tokens of this layer
+                visual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
+                # Add the learnable tokens of this layer with the input, by replacing the previous
+                # layer learnable tokens
+                x = torch.cat([prefix, visual_context], dim=0)
+            else:
+                # Appending the learnable tokens in different way
+                # x -> [77, NCLS, DIM]
+                # First remove the learnable tokens from previous layer
+                prefix = x[:1, :, :]
+                suffix = x[1 + self.n_ctx_text:, :, :]
+                # Create/configure learnable tokens of this layer
+                textual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
+                # Add the learnable tokens of this layer with the input, replaced by previous
+                # layer learnable tokens
+                x = torch.cat([prefix, textual_context, suffix], dim=0)   
+        y = self.ln_1(x)
+        y = y.permute(1, 0, 2)
+        y = F.linear(y, self.attn.in_proj_weight, self.attn.in_proj_bias)
+        # The in_proj_weight performs the q_proj, k_proj, v_proj projections
+        N, L, C = y.shape
+        y = y.view(N, L, 3, C // 3).permute(2, 0, 1, 3).reshape(3 * N, L, C // 3)
+        y = F.linear(y, self.attn.out_proj.weight, self.attn.out_proj.bias)
+        q, k, v = y.tensor_split(3, dim=0)
+        v = v.permute(1, 0, 2)
+        q = q.permute(1, 0, 2)
+        k = k.permute(1, 0, 2)
+        v += x
+        v = v + self.mlp(self.ln_2(v))
+
+        x = x + self.attention(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
+
+        return x, q, k, v
+
 
 class Transformer(nn.Module):
     def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
@@ -566,11 +647,18 @@ class Transformer(nn.Module):
         self.layers = layers
         # Implements respective encoder blocks for a given design choice
         current_trainer = design_details['trainer']
-        if current_trainer == 'IVLP' or current_trainer == 'VPT':
-            self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
+        # if current_trainer == 'IVLP' or current_trainer == 'VPT':
+        #     self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
+        #                                                                  text_layer, i,
+        #                                                                  design_details) if prompts_needed > i
+        #                                      else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
+        #                                                                       text_layer, i, design_details)
+        #                                      for i in range(layers)])
+        if current_trainer == "IVLP_Local":
+            self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
                                                                          text_layer, i,
                                                                          design_details) if prompts_needed > i
-                                             else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
+                                             else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
                                                                               text_layer, i, design_details)
                                              for i in range(layers)])
         elif current_trainer in 'IVLP':
@@ -806,6 +894,13 @@ class VisionTransformer_Local(nn.Module):
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
         x = x + self.positional_embedding.to(x.dtype)
+
+        if self.VPT_shallow:
+            visual_ctx = self.VPT.expand(x.shape[0], -1, -1).half()
+            x = torch.cat([x, visual_ctx], dim=1)
+        else:
+            assert self.prompt_till_layer_visual == 0
+
         x = self.ln_pre(x)
 
         x = x.permute(1, 0, 2)  # NLD -> LND
