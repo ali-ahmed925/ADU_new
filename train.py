@@ -66,6 +66,7 @@ import trainers.independentVL_VLAdapter_NNL
 import trainers.independentVL_VLAdapter_DC
 import trainers.independentVL_VLAdapter_NNL_Divided
 import trainers.independentVL_VLAdapter_Local
+import trainers.independent_VLAdapter_SelectPatch
 
 def print_args(args, cfg):
     print("***************")
@@ -160,6 +161,10 @@ def extend_cfg(cfg, args):
 
     cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
     cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False
+
+    cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH = CN()
+    cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.TOPK = 190
+    cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.ONLY_MASKED = False
 
     cfg.TRAINER.COOP_W_ADAPTER = CN()
 

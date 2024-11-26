@@ -818,6 +818,238 @@ class TrainerDF_Local(TrainerDF):
         else:
             self._writer.add_embedding(mat, meta_data, label_img, global_step, tag)
 
+class TrainerDF_Local_SelectPatch(TrainerDF_Local):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.only_masked = cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.ONLY_MASKED
+    def forward_backward(self, batch):
+        image, label, domain = self.parse_batch_train(batch)
+        
+        prec = self.cfg.TRAINER.COOP.PREC
+        if prec == "amp":
+            with autocast():
+                output, img_feat, txt_feat = self.model(image)
+                loss = F.cross_entropy(output, label)
+            self.optim.zero_grad()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optim)
+            self.scaler.update()
+        else:
+            if self.use_domain_classifier_loss:
+                output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat, domain_logits, domain_logits_masked = self.model(image)
+            else :
+                output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat = self.model(image)
+            if not self.cfg.NO_FORGET:
+                entropy = Entropy()
+                false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
+                
+                # for prv_domain in prv_domain_list:
+                prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+                prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+                # for del_domain in del_domain_list:
+                del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+                del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+                if self.only_masked :
+                    if torch.equal(false_check_tensor, prv_domain_mask):
+                        loss_prv = 0
+                    else :
+                        loss_prv = F.cross_entropy(output_masked[prv_domain_mask], label[prv_domain_mask])
+                    if torch.equal(false_check_tensor, del_domain_mask):
+                        loss_del = 0
+                    else :
+                        loss_del = entropy(output_masked[del_domain_mask])
+                    loss = loss_prv - loss_del
+                else:
+                    if torch.equal(false_check_tensor, prv_domain_mask):
+                        loss_prv = 0
+                    else :
+                        loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
+                    if torch.equal(false_check_tensor, del_domain_mask):
+                        loss_del = 0
+                    else :
+                        loss_del = entropy(output[del_domain_mask])
+                    loss = loss_prv - loss_del
+
+                if self.is_domain_divided:
+                    target_label = domain
+                else :
+                    target_label = prv_domain_mask.int().long()
+
+                ######################################################################
+                # domain loss (domain classifier loss, nearest neighbor loss or both)
+                #####################################################################
+                # if self.entropy_mask:
+                    
+                # elif self.block_shuffle_selection :
+                #     pass
+                # elif self.block_shuffle_selection_non_expert:
+                #     pass
+
+                if self.use_domain_classifier_loss :
+                    if self.masked_dc:
+                        domain_cls_loss = F.cross_entropy(domain_logits_masked, target_label)
+                    else:
+                        domain_cls_loss = F.cross_entropy(domain_logits, target_label)
+                    loss += domain_cls_loss
+                if self.use_nearest_neighbor_loss :
+                    if self.masked_nn:
+                        domain_nn_loss = self.nnl(img_feat_masked, target_label)
+                    else :
+                        domain_nn_loss = self.nnl(img_feat, target_label)
+                    loss += domain_nn_loss
+
+            else :
+                loss = F.cross_entropy(output, label)
+            self.model_backward_and_update(loss)
+        
+        if not self.cfg.NO_FORGET:
+            loss_summary = {
+                "loss": loss.item(),
+                "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
+                "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
+                "loss_domain_cls": domain_cls_loss.item() if self.use_domain_classifier_loss else 0,
+                "loss_domain_nn": domain_nn_loss.item() if self.use_nearest_neighbor_loss else 0,
+                # "acc": compute_accuracy(output, label)[0].item(),
+            }
+            acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
+            loss_summary.update(acc)
+            # loss_summary.update(acc)
+        else :
+            loss_summary = {
+                "loss": loss.item(),
+                "acc": compute_accuracy(output, label)[0].item()
+            }
+            # acc = compute_accuracy(output, label)[0].item()
+        # acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
+        
+        if (self.batch_idx + 1) == self.num_batches:
+            self.update_lr()
+
+        return loss_summary
+    
+    @torch.no_grad()
+    def test(self, split=None):
+        """A generic testing pipeline."""
+        self.set_tensorboard()
+        self.set_model_mode("eval")
+        self.evaluator.reset()
+
+        if split is None:
+            split = self.cfg.TEST.SPLIT
+
+        if split == "val" and self.val_loader is not None:
+            data_loader = self.val_loader
+        else:
+            split = "test"  # in case val_loader is None
+            data_loader = self.test_loader
+
+        print(f"Evaluate on the *{split}* set")
+        eval_dict = {}
+        for batch_idx, batch in enumerate(tqdm(data_loader)):
+            input, label, domain = self.parse_batch_test(batch)
+            # output, img_feat, local_feat, txt_feat = self.model_inference(input)
+            if self.use_domain_classifier_loss:
+                output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat, domain_logits, domain_logits_masked = self.model_inference(input)
+            else :
+                output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat = self.model_inference(input)
+            self.evaluator.process(output, label)
+
+            # for prv_domain in prv_domain_list:
+            prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+            prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+            # for del_domain in del_domain_list:
+            del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+            del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+
+            eval_dict = compute_acc_for_df_eval(
+                eval_dict,
+                output,
+                label,
+                prv_domain_mask,
+                del_domain_mask,
+                domain,
+                self.domain_list,
+                self.device
+            ) 
+            if batch_idx == 0:
+                label_all = label
+                domain_all = domain
+                img_feat_all = img_feat
+                # input_all = input
+
+            else :
+                label_all = torch.cat((label_all, label))
+                domain_all = torch.cat((domain_all, domain))
+                img_feat_all = torch.cat((img_feat_all, img_feat))
+                # input_all = torch.cat((input_all, input))
+
+        for cls_id, clsname in enumerate(self.classnames):
+            cls_specific_index = (label_all == cls_id)
+            if torch.all(cls_specific_index == False):
+                pass
+            else:
+                domain_metadata = []
+                for d in domain_all[cls_specific_index]:
+                    domain_metadata.append(self.domain_list[int(d)])
+                tag = f"{split}/tsne-plot/{clsname}"
+                # self.write_embedding(img_feat[cls_specific_index], domain_metadata, input[cls_specific_index], global_step=batch_idx, tag=tag)
+                self.write_embedding(img_feat_all[cls_specific_index], domain_metadata, tag=tag)
+
+        results = self.evaluator.evaluate()
+        #############################################################
+        #
+        # add csv files
+        #
+        ##############################################################
+        #############################################################
+        #
+        # add csv files
+        #
+        ##############################################################
+        csv_col_name = ""
+        for idx, dname in enumerate(self.del_domain_list):
+            if idx == len(self.domain_list) - 1:
+                csv_col_name += f"{dname}"
+            else :
+                csv_col_name += f"{dname} "
+
+        if csv_col_name not in self.df.columns:
+            new_column_values = [
+                round((eval_dict["correct_prv"] / eval_dict["total_prv"])*100, 3),
+                round((1 - eval_dict["correct_del"] / eval_dict["total_del"])*100, 3), 
+                round((eval_dict["correct_del"] / eval_dict["total_del"])*100, 3)
+            ]
+            specific_acc = "("
+            for idx, dname in enumerate(self.del_domain_list):
+                sp_acc = (eval_dict[f"correct_{dname}"] / eval_dict[f"total_{dname}"])*100
+                if idx == len(self.del_domain_list) - 1:
+                    specific_acc += f"{sp_acc:.3f})"
+                else:
+                    specific_acc += f"{sp_acc:.3f}, "
+
+            new_column_values.append(specific_acc)
+
+            self.df[csv_col_name] = new_column_values
+            self.df.to_csv(self.csv_file_path)
+
+        if not self.cfg.NO_FORGET:
+            print("==========peservation or delete acc===============")
+            for name in ["prv", "del"]:
+                acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
+                print(f"{name} : {acc:.5f}")
+            print("==============domain specific acc=================")
+            for domain_name in self.domain_list:
+                acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
+                print(f"{domain_name} : {acc:.5f}")
+            print("===================================================")
+
+        for k, v in results.items():
+            tag = f"{split}/{k}"
+            self.write_scalar(tag, v, self.epoch)
+
+        return list(results.values())[0]
+
+
 from utils.loss_fn import entropy_local_topk_distilled
 class TrainerDF_Local_Distill(TrainerDF_Local):
     def __init__(self, cfg):
