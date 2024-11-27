@@ -22,7 +22,7 @@ from dassl.utils import (
 import time
 from tqdm import tqdm
 
-from engine.trainer import TrainerDF, TrainerDF_Local
+from engine.trainer import TrainerDF, TrainerDF_Local, TrainerDF_Local_SelectPatch
 
 _tokenizer = _Tokenizer()
 
@@ -39,10 +39,13 @@ def load_clip_to_cpu(cfg):
 
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
-    design_details = {"trainer": 'IVLP_Local',
+    design_details = {"trainer": 'IVLP_VL_Adapter_Local_SelectPatch',
                       "vision_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION,
                       "language_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT, "vision_ctx": cfg.TRAINER.IVLP.N_CTX_VISION,
-                      "language_ctx": cfg.TRAINER.IVLP.N_CTX_TEXT}
+                      "language_ctx": cfg.TRAINER.IVLP.N_CTX_TEXT,
+                      "topk": cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.TOPK,
+                      "select_method": cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.SELECT_METHOD
+                      }
     model = clip.build_model(state_dict or model.state_dict(), design_details)
 
     return model
@@ -179,34 +182,83 @@ class CustomCLIP(nn.Module):
                 self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
             self.domain_classifier.to(self.dtype)
         self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
+        self.select_method = cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.SELECT_METHOD
 
-    def forward(self, image, label=None):
-        tokenized_prompts = self.tokenized_prompts
-        logit_scale = self.logit_scale.exp()
-        prompts = self.prompt_learner()
-        text_features = self.text_encoder(prompts, tokenized_prompts)
-        image_features, local_feat = self.image_encoder(image.type(self.dtype))
-        
-        image_features = self.vision_adapter(image_features)
-        text_features = self.text_adapter(text_features)
+    def forward(self, image, label=None, selection_feature=None, block_shuffled_img=None):
+        if not self.training:
+            tokenized_prompts = self.tokenized_prompts
+            logit_scale = self.logit_scale.exp()
+            prompts = self.prompt_learner()
+            text_features = self.text_encoder(prompts, tokenized_prompts)
+            text_features = self.text_adapter(text_features)
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-        logits = logit_scale * image_features @ text_features.t()
-        
-        local_features = []
-        for lf_i in local_feat:
-            local_feat_i = self.vision_adapter(lf_i)
-            local_features.append(local_feat_i)
-        local_features = torch.stack(local_features)
-        local_logits = logit_scale * local_features @ text_features.t()
-        if self.use_domain_cls_loss:
-            domain_logit = self.domain_classifier(image_features)
-            return logits, local_logits, image_features ,text_features, local_features, domain_logit
-        # if self.prompt_learner.training:
-        #     return F.cross_entropy(logits, label)
+            image_features, local_feat, image_features_masked, local_feat_masked = self.image_encoder(image.type(self.dtype), selection_feature)
+            image_features = self.vision_adapter(image_features)
+            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+            logits = logit_scale * image_features @ text_features.t()
+            if self.use_domain_cls_loss:
+                # domain_logit = self.domain_classifier(image_features)
+                # domain_logit_masked = self.domain_classifier(image_features_masked)
+                return logits, None, None, image_features, None, text_features, None, None, None
+            # if self.prompt_learner.training:
+            #     return F.cross_entropy(logits, label)
 
-        return logits, local_logits, image_features, text_features, local_features
+            return logits, None, None, image_features, None, text_features, None
+
+        else :
+            tokenized_prompts = self.tokenized_prompts
+            logit_scale = self.logit_scale.exp()
+            prompts = self.prompt_learner()
+            text_features = self.text_encoder(prompts, tokenized_prompts)
+            text_features = self.text_adapter(text_features)
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+
+            if self.select_method == "entropy":
+                selection_feature = text_features
+            elif self.select_method == "block_shuffle_distill":
+                pass
+            elif self.select_method == "block_shuffle":
+                selection_feature, _, _, _ = self.image_encoder(block_shuffled_img.type(self.dtype), input_type="corrupted")
+
+
+            image_features, local_feat, image_features_masked, local_feat_masked = self.image_encoder(image.type(self.dtype), selection_feature)
+            image_features = self.vision_adapter(image_features)
+            image_features_masked = self.vision_adapter(image_features_masked)
+
+
+            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+            image_features_masked = image_features_masked / image_features_masked.norm(dim=-1, keepdim=True)
+            
+            logits = logit_scale * image_features @ text_features.t()
+            logits_masked = logit_scale * image_features_masked @ text_features.t()
+            
+            local_features = []
+            for lf_i in local_feat:
+                local_feat_i = self.vision_adapter(lf_i)
+                local_features.append(local_feat_i)
+            local_features = torch.stack(local_features)
+            local_features = local_features / local_features.norm(dim=-1, keepdim=True)
+            local_logits = logit_scale * local_features @ text_features.t()
+
+            # local_features_masked = []
+            # for lf_i in local_feat_masked:
+            #     local_feat_i = self.vision_adapter(lf_i)
+            #     local_features_masked.append(local_feat_i)
+            # local_features_masked = torch.stack(local_features_masked)
+            # local_features_masked = local_features_masked / local_features_masked.norm(dim=-1, keepdim=True)
+            # local_logits_masked = logit_scale * local_features_masked @ text_features.t()
+
+
+
+            if self.use_domain_cls_loss:
+                domain_logit = self.domain_classifier(image_features)
+                domain_logit_masked = self.domain_classifier(image_features_masked)
+                return logits, logits_masked, local_logits, image_features, image_features_masked, text_features, local_features, domain_logit, domain_logit_masked
+            # if self.prompt_learner.training:
+            #     return F.cross_entropy(logits, label)
+
+            return logits, logits_masked, local_logits, image_features, image_features_masked, text_features, local_features
 
 class Adapter(nn.Module):
     def __init__(self, c_in, dtype, reduction=4):
@@ -224,7 +276,7 @@ class Adapter(nn.Module):
         return x.type(self.dtype)
 
 @TRAINER_REGISTRY.register()
-class IVLP_VL_Adapter_Local(TrainerDF_Local):
+class IVLP_VL_Adapter_Local_SelectPatch(TrainerDF_Local_SelectPatch):
         
     def check_cfg(self, cfg):
         assert cfg.TRAINER.IVLP.PREC in ["fp16", "fp32", "amp"]

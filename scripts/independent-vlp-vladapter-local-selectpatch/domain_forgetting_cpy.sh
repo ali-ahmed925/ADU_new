@@ -71,8 +71,8 @@ if [ "$BLOCK_SHUFFLE_SELECTION" = "true" ];then
     BLOCK_SHUFFLE_SELECTION_FLAG="--block_shuffle_selection"
 fi
 
-DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/${EXPERIMENT}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl-${USE_NEAREST_NEIGHBOR_LOSS}_masked-${MASKED_NN}_dclsl-${USE_DOMAIN_CLS_LOSS}_masked-${MASKED_CLS}_divided-${IS_DOMAIN_DIVIDED}_topk-${TOPK}_grid${GRID}/seed${SEED}/${TODAY}
-CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/${EXPERIMENT}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl-${USE_NEAREST_NEIGHBOR_LOSS}_masked-${MASKED_NN}_dclsl-${USE_DOMAIN_CLS_LOSS}-masked-${MASKED_CLS}_divided-${IS_DOMAIN_DIVIDED}_topk-${TOPK}_grid${GRID}_seed${SEED}.csv
+DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl-${USE_NEAREST_NEIGHBOR_LOSS}_masked-${MASKED_NN}_dclsl-${USE_DOMAIN_CLS_LOSS}_masked-${MASKED_CLS}_divided-${IS_DOMAIN_DIVIDED}_topk-${TOPK}/seed${SEED}/${TODAY}
+CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl-${USE_NEAREST_NEIGHBOR_LOSS}_masked-${MASKED_NN}_dclsl-${USE_DOMAIN_CLS_LOSS}-masked-${MASKED_CLS}_divided-${IS_DOMAIN_DIVIDED}_topk-${TOPK}_seed${SEED}.csv
 
 if [ -d "$DIR" ]; then
     echo "Results are available in ${DIR}. Resuming..."
@@ -97,7 +97,6 @@ else
     --output-dir ${DIR} \
     --num_shots ${SHOTS} \
     --topk ${TOPK} \
-    --grid_num ${GRID} \
     ${IS_DOMAIN_DIVIDED_FLAG} \
     ${USE_DOMAIN_CLS_LOSS_FLAG} \
     ${USE_NEAREST_NEIGHBOR_LOSS_FLAG} \

@@ -17,6 +17,21 @@ from typing import Optional
 #   entropy = torch.sum(prob * torch.log(prob + 1e-5), dim=1)
   
 #   return -torch.mean(entropy) 
+def get_entropy(output):
+  ### softmaxせずに渡す (batch_size, # of classes)
+  prob = F.softmax(output,dim=1)
+  entropy = torch.sum(prob * torch.log(prob + 1e-5), dim=1)
+  
+  return -torch.mean(entropy) 
+
+def get_entropy_local(output):
+  """output: local feature (N, C, # of classes) 
+  """
+  ###get local feature and returns entropy of each local features
+  prob = F.softmax(output,dim=2)
+  entropy = torch.sum(prob * torch.log(prob + 1e-5), dim=2)
+  return -entropy
+
 def entropy_local_topk(p, label, num_of_local_feature, top_k=3):
     """
     Extract non-Top-K regions and calculate entropy.

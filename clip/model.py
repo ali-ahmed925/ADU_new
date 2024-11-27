@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-from typing import Type, Tuple, Union
+from typing import Type, Tuple, Union, Optional
 NoneType = Type[None]
 
 class Bottleneck(nn.Module):
@@ -556,8 +556,8 @@ class ResidualAttentionBlock_MaPLe(nn.Module):
         x = x + self.attention(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return [x, compound_prompts_deeper, counter]  # return again as a list, so that nn.seq can work
-
-
+    
+    
 class Transformer(nn.Module):
     def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
                  text_layer=False, design_details=None):
@@ -566,11 +566,18 @@ class Transformer(nn.Module):
         self.layers = layers
         # Implements respective encoder blocks for a given design choice
         current_trainer = design_details['trainer']
-        if current_trainer == 'IVLP' or current_trainer == 'VPT':
-            self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
+        # if current_trainer == 'IVLP' or current_trainer == 'VPT':
+        #     self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
+        #                                                                  text_layer, i,
+        #                                                                  design_details) if prompts_needed > i
+        #                                      else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
+        #                                                                       text_layer, i, design_details)
+        #                                      for i in range(layers)])
+        if current_trainer == "IVLP_Local":
+            self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
                                                                          text_layer, i,
                                                                          design_details) if prompts_needed > i
-                                             else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
+                                             else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
                                                                               text_layer, i, design_details)
                                              for i in range(layers)])
         elif current_trainer in 'IVLP':
@@ -621,6 +628,10 @@ class Transformer(nn.Module):
             assert current_trainer == 'CoOp' or current_trainer == 'CoCoOp'
             self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)])
         self.current_trainer = current_trainer
+        self.prompts_needed = prompts_needed
+
+        self.patch_selection = False
+
     def forward(self, x: torch.Tensor):
         if "Local" in self.current_trainer:
             for i in range(self.layers):
@@ -629,6 +640,110 @@ class Transformer(nn.Module):
         else:
             return self.resblocks(x)
 
+from utils.loss_fn import *   
+class Transformer_SelectPatch(nn.Module):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
+                 text_layer=False, design_details=None):
+        super().__init__()
+        self.width = width
+        self.layers = layers
+        self.text_layer = text_layer
+        # Implements respective encoder blocks for a given design choice
+        current_trainer = design_details['trainer']
+        # if current_trainer == 'IVLP' or current_trainer == 'VPT':
+        #     self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
+        #                                                                  text_layer, i,
+        #                                                                  design_details) if prompts_needed > i
+        #                                      else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
+        #                                                                       text_layer, i, design_details)
+        #                                      for i in range(layers)])
+        if current_trainer == "IVLP_VL_Adapter_Local_SelectPatch":
+            self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
+                                                                         text_layer, i,
+                                                                         design_details) if prompts_needed > i
+                                             else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
+                                                                              text_layer, i, design_details)
+                                             for i in range(layers)])
+        
+        self.current_trainer = current_trainer
+        self.prompts_needed = prompts_needed
+        self.n_ctx_visual = design_details["vision_ctx"]
+        self.topk = design_details["topk"]
+        self.proj = torch.load("/home/gotoyuta/lab/Domain-Forgetting/proj-vit-b16.pt", weights_only=True) # FIXME
+        self.proj.requires_grad = False
+        self.patch_selection = True
+        self.select_method = design_details["select_method"]
+
+    def forward(self, x: torch.Tensor, selective_feature: Union[torch.Tensor, NoneType] = None):
+        if not self.training:
+            if self.text_layer :
+                if "Local" in self.current_trainer:
+                    for i in range(self.layers):
+                        x, q, k, v = self.resblocks[i](x)
+                    return x, q, k, v
+                else:
+                    return self.resblocks(x)
+            else :
+                if "Local" in self.current_trainer:
+                    for i in range(self.layers):
+                        x, q, k, v = self.resblocks[i](x)
+                    return x, q, k, v, None, None
+                else:
+                    return self.resblocks(x)
+        else:
+            if self.text_layer :
+                if "Local" in self.current_trainer:
+                    for i in range(self.layers):
+                        x, q, k, v = self.resblocks[i](x)
+                    return x, q, k, v
+                else:
+                    return self.resblocks(x)
+            else:
+                if "Local" in self.current_trainer:
+                    if self.patch_selection:
+                        for i in range(self.layers):
+                            if i < self.prompts_needed - 1:
+                                x, q, k, v = self.resblocks[i](x)
+                            elif i == self.prompts_needed - 1:
+                                x, q, k, v = self.resblocks[i](x)
+
+                                ##########value featrureの準備########
+                                v_proj = v @ self.proj
+                                normalized_v = v_proj / v_proj.norm(dim=-1, keepdim=True)
+                                normalized_v = normalized_v.permute(1, 0, 2) # LND -> NLD
+
+                                if self.select_method == "entropy":
+                                    local_logits = normalized_v @ selective_feature.t()
+                                    local_entropy = get_entropy_local(local_logits[:, 1 + self.n_ctx_visual:])
+                                    topk_index = torch.topk(local_entropy, k=self.topk, dim=1)[1]
+                                    mask = torch.zeros_like(local_entropy)
+                                elif self.select_method == "block_shuffle_distill":
+                                    domain_specific_features = selective_feature.unsqueeze(1)
+                                    domain_focus_simmap = torch.matmul(normalized_v[:, 1 + self.n_ctx_visual:,:], domain_specific_features.transpose(-1, -2)).squeeze(-1)
+                                    topk_index = torch.topk(domain_focus_simmap, k=self.topk, dim=1)[1]
+                                    mask = torch.zeros_like(domain_focus_simmap)
+                                # if self.input_type == "image":
+                                mask.scatter_(1, topk_index, 1)
+                                margine_context_mask = torch.ones((mask.shape[0], 1 + self.n_ctx_visual)).cuda()
+                                mask = torch.cat((margine_context_mask, mask), dim = 1).half()
+                                x_masked = x.permute(1, 0, 2) * mask.unsqueeze(-1)
+                                x_masked = x_masked.permute(1, 0, 2)
+
+                                # return x, q, k, v, x_masked, v_masked
+                                # return x, q, k, v, x_masked.permute(1, 0, 2)
+                                #################################
+                                # patch select function
+                                ##################################
+                            else :
+                                x, q, k, v = self.resblocks[i](x)
+                                x_masked, _, _, v_masked = self.resblocks[i](x_masked)
+                        return x, q, k, v, x_masked, v_masked
+                    else :
+                        for i in range(self.layers):
+                            x, q, k, v = self.resblocks[i](x)
+                        return x, q, k, v
+                else:
+                    return self.resblocks(x)
 
 
 class VisionTransformer(nn.Module):
@@ -806,6 +921,13 @@ class VisionTransformer_Local(nn.Module):
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
         x = x + self.positional_embedding.to(x.dtype)
+
+        if self.VPT_shallow:
+            visual_ctx = self.VPT.expand(x.shape[0], -1, -1).half()
+            x = torch.cat([x, visual_ctx], dim=1)
+        else:
+            assert self.prompt_till_layer_visual == 0
+
         x = self.ln_pre(x)
 
         x = x.permute(1, 0, 2)  # NLD -> LND
@@ -824,6 +946,104 @@ class VisionTransformer_Local(nn.Module):
             v = v @ self.proj
 
         return x, v
+
+class VisionTransformer_Local_SelectPatch(nn.Module):
+    def __init__(
+        self,
+        input_resolution: int,
+        patch_size: int, width: int,
+        layers: int,
+        heads: int,
+        output_dim: int,
+        return_local_features: bool = True,
+        design_details: bool = False
+    ) -> NoneType:
+        super().__init__()
+        self.input_resolution = input_resolution
+        self.output_dim = output_dim
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=width, kernel_size=patch_size, stride=patch_size, bias=False)
+
+        if design_details["vision_depth"] == 0:
+            self.VPT_shallow = False
+        else:
+            self.VPT_shallow = True
+        if self.VPT_shallow:
+            # Add visual prompt tokens here
+            n_ctx = design_details["vision_ctx"]  # hyperparameter
+            ctx_vectors = torch.empty(n_ctx, width)
+            nn.init.normal_(ctx_vectors, std=0.02)
+            self.VPT = nn.Parameter(ctx_vectors)
+
+        scale = width ** -0.5
+        self.class_embedding = nn.Parameter(scale * torch.randn(width))
+        self.positional_embedding = nn.Parameter(scale * torch.randn((input_resolution // patch_size) ** 2 + 1, width))
+        self.ln_pre = LayerNorm(width)
+
+        # self.transformer = Transformer(width, layers, heads, design_details=design_details)
+        self.prompt_till_layer_visual = design_details["vision_depth"]
+        self.transformer = Transformer_SelectPatch(width, layers, heads, prompts_needed=self.prompt_till_layer_visual,
+                                       design_details=design_details)
+
+        self.ln_post = LayerNorm(width)
+        self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
+        self.return_local_features = return_local_features
+
+    @staticmethod
+    def get_pixel_from_patch_idx(patch_idx: int, patch_size: int, image_size: int) -> Tuple[int, int]:
+        """this function takes a patch idx and returns the list of coordinates of pixels that are in the patch as a list"""
+        coordinates = []
+        for i in range(patch_size):
+            for j in range(patch_size):
+                x = (patch_idx // (image_size // patch_size)) * patch_size + i
+                y = (patch_idx % (image_size // patch_size)) * patch_size + j
+                coordinates.append((x, y))
+        return coordinates
+
+    def forward(self, x: torch.Tensor, select_features: Union[torch.Tensor, NoneType]=None, input_type: Union[str, NoneType] = "image") -> torch.Tensor:
+        x = self.conv1(x)  # shape = [*, width, grid, grid]
+        x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
+        x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
+        x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
+        x = x + self.positional_embedding.to(x.dtype)
+
+        if self.VPT_shallow:
+            visual_ctx = self.VPT.expand(x.shape[0], -1, -1).half()
+            x = torch.cat([x, visual_ctx], dim=1)
+        else:
+            assert self.prompt_till_layer_visual == 0
+
+        x = self.ln_pre(x)
+
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x, q, k, v, x_masked, v_masked = self.transformer(x, select_features, input_type)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        B, _, C = x[:, 1:].shape
+        x = self.ln_post(x[:, 0, :])
+        if self.training:
+            x_masked = x_masked.permute(1, 0, 2)  # LND -> NLD
+            x_masked = self.ln_post(x_masked[:, 0, :])
+
+        if self.return_local_features:
+            v = v.permute(1, 0, 2)
+            v = self.ln_post(v)
+            v = v[:, 1:]
+            v = v.reshape(B, -1, C).contiguous()
+            if self.training :
+                if self.transformer.input_type == "image":
+                    v_masked = v_masked.permute(1, 0, 2)
+                    v_masked = self.ln_post(v_masked)
+                    v_masked = v_masked[:, 1:]
+                    v_masked = v_masked.reshape(B, -1, C).contiguous()
+        if self.proj is not None:
+            x = x @ self.proj
+            v = v @ self.proj
+            if self.training :
+                x_masked = x_masked @ self.proj
+                v_masked = v_masked @ self.proj
+        if self.training:
+            return x, v, x_masked, v_masked
+        else :
+            return x, v, None, None
 
 
 class CLIP(nn.Module):
@@ -868,6 +1088,16 @@ class CLIP(nn.Module):
                     output_dim=embed_dim,
                     design_details=design_details
                 )
+            elif trainer == "IVLP_VL_Adapter_Local_SelectPatch":
+                self.visual = VisionTransformer_Local_SelectPatch(
+                    input_resolution=image_resolution,
+                    patch_size=vision_patch_size,
+                    width=vision_width,
+                    layers=vision_layers,
+                    heads=vision_heads,
+                    output_dim=embed_dim,
+                    design_details=design_details
+                )
             elif "Local" in trainer:
                 self.visual = VisionTransformer_Local(
                     input_resolution=image_resolution,
@@ -891,15 +1121,26 @@ class CLIP(nn.Module):
         # hyper-parameter if need to add prompt embeddings inside to the input
         # of transformer block or not:
         prompt_till_layer_text = design_details['language_depth']
-        self.transformer = Transformer(
-            width=transformer_width,
-            layers=transformer_layers,
-            heads=transformer_heads,
-            attn_mask=self.build_attention_mask(),
-            prompts_needed=prompt_till_layer_text,
-            text_layer=True,
-            design_details=design_details
-        )
+        if trainer == "IVLP_VL_Adapter_Local_SelectPatch":
+            self.transformer = Transformer_SelectPatch(
+                width=transformer_width,
+                layers=transformer_layers,
+                heads=transformer_heads,
+                attn_mask=self.build_attention_mask(),
+                prompts_needed=prompt_till_layer_text,
+                text_layer=True,
+                design_details=design_details
+            )
+        else :
+            self.transformer = Transformer(
+                width=transformer_width,
+                layers=transformer_layers,
+                heads=transformer_heads,
+                attn_mask=self.build_attention_mask(),
+                prompts_needed=prompt_till_layer_text,
+                text_layer=True,
+                design_details=design_details
+            )
 
         self.vocab_size = vocab_size
         self.token_embedding = nn.Embedding(vocab_size, transformer_width)
