@@ -822,6 +822,11 @@ class TrainerDF_Local_SelectPatch(TrainerDF_Local):
     def __init__(self, cfg):
         super().__init__(cfg)
         self.only_masked = cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.ONLY_MASKED
+        self.select_method = cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.SELECT_METHOD
+        self.model_expert = load_clip_to_cpu_expert(cfg)
+        self.model_expert.cuda()
+        self.model_expert.eval()
+
     def forward_backward(self, batch):
         image, label, domain = self.parse_batch_train(batch)
         
@@ -835,10 +840,34 @@ class TrainerDF_Local_SelectPatch(TrainerDF_Local):
             self.scaler.step(self.optim)
             self.scaler.update()
         else:
-            if self.use_domain_classifier_loss:
-                output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat, domain_logits, domain_logits_masked = self.model(image)
-            else :
-                output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat = self.model(image)
+            if self.select_method == "entropy":
+                if self.use_domain_classifier_loss:
+                    output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat, domain_logits, domain_logits_masked = self.model(image)
+                else :
+                    output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat = self.model(image)
+            elif self.select_method == "block_shuffle_distill":
+                destructed_image = image
+                destructed_image = self.blur(image)
+                destructed_image = get_jigsaw_tensor(destructed_image, resize=(224,224), grid=self.grid_num)
+                destructed_image = self.resize(destructed_image)
+                with torch.no_grad():
+                    domain_specific_features = self.model_expert.encode_image(destructed_image)
+                if self.use_domain_classifier_loss:
+                    output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat, domain_logits, domain_logits_masked = self.model(image, selection_feature=domain_specific_features)
+                else :
+                    output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat = self.model(image, selection_feature=domain_specific_features)
+            elif self.select_method == "block_shuffle":
+                destructed_image = image
+                destructed_image = self.blur(image)
+                destructed_image = get_jigsaw_tensor(destructed_image, resize=(224,224), grid=self.grid_num)
+                destructed_image = self.resize(destructed_image)
+
+                if self.use_domain_classifier_loss:
+                    output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat, domain_logits, domain_logits_masked = self.model(image, block_shuffled_img=destructed_image)
+                else :
+                    output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat = self.model(image, selection_feature=domain_specific_features)
+
+            
             if not self.cfg.NO_FORGET:
                 entropy = Entropy()
                 false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)

@@ -556,92 +556,8 @@ class ResidualAttentionBlock_MaPLe(nn.Module):
         x = x + self.attention(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return [x, compound_prompts_deeper, counter]  # return again as a list, so that nn.seq can work
-
-class ResidualAttentionBlock_IVLP_Local_SelectPatch(nn.Module):
-    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, add_prompt=False, text_layer=False,i=0, design_details=None) -> NoneType:
-        super().__init__()
-
-        self.attn = nn.MultiheadAttention(d_model, n_head)
-        self.ln_1 = LayerNorm(d_model)
-        self.mlp = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(d_model, d_model * 4)),
-            ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(d_model * 4, d_model))
-        ]))
-        self.ln_2 = LayerNorm(d_model)
-
-        self.text_layer = text_layer
-        self.attn_mask = attn_mask
-
-        if i != 0:
-            self.add_prompt = add_prompt
-            if self.add_prompt:
-                if self.text_layer:
-                    self.n_ctx_text = design_details["language_ctx"]  # hyperparameter
-                    ctx_vectors = torch.empty(self.n_ctx_text, d_model)
-                else:
-                    self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
-                    ctx_vectors = torch.empty(self.n_ctx_visual, d_model)
-                # Code snippet for per layer visual prompts
-                nn.init.normal_(ctx_vectors, std=0.02)
-                self.VPT_shallow = nn.Parameter(ctx_vectors)
-        else:
-            self.add_prompt = False
-
-        if not text_layer:
-            self.patch_selection = design_details["vision_depth_selection"]
-            self.select_method = design_details["select_method"]
-
-
-    def attention(self, x: torch.Tensor) -> torch.Tensor:
-        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
-        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
-
-    def attention_weight(self, x: torch.Tensor) -> torch.Tensor:  # ADDED
-        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
-        return self.attn(x, x, x, need_weights=True, attn_mask=self.attn_mask)[1]
-
-    def forward(self, x: torch.Tensor, target_features: Union[torch.Tensor, NoneType]= None, idx: Union[int, NoneType] = None) -> torch.Tensor:
-        if self.add_prompt:
-            # Also see if this is textual transformer layer or not
-            if not self.text_layer:
-                # Remove the outputs produced by learnable tokens of previous layer
-                prefix = x[0:x.shape[0] - self.n_ctx_visual, :, :]
-                # Create/configure learnable tokens of this layer
-                visual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
-                # Add the learnable tokens of this layer with the input, by replacing the previous
-                # layer learnable tokens
-                x = torch.cat([prefix, visual_context], dim=0)
-            else:
-                # Appending the learnable tokens in different way
-                # x -> [77, NCLS, DIM]
-                # First remove the learnable tokens from previous layer
-                prefix = x[:1, :, :]
-                suffix = x[1 + self.n_ctx_text:, :, :]
-                # Create/configure learnable tokens of this layer
-                textual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
-                # Add the learnable tokens of this layer with the input, replaced by previous
-                # layer learnable tokens
-                x = torch.cat([prefix, textual_context, suffix], dim=0)   
-        y = self.ln_1(x)
-        y = y.permute(1, 0, 2)
-        y = F.linear(y, self.attn.in_proj_weight, self.attn.in_proj_bias)
-        # The in_proj_weight performs the q_proj, k_proj, v_proj projections
-        N, L, C = y.shape
-        y = y.view(N, L, 3, C // 3).permute(2, 0, 1, 3).reshape(3 * N, L, C // 3)
-        y = F.linear(y, self.attn.out_proj.weight, self.attn.out_proj.bias)
-        q, k, v = y.tensor_split(3, dim=0)
-        v = v.permute(1, 0, 2)
-        q = q.permute(1, 0, 2)
-        k = k.permute(1, 0, 2)
-        v += x
-        v = v + self.mlp(self.ln_2(v))
-
-        x = x + self.attention(self.ln_1(x))
-        x = x + self.mlp(self.ln_2(x))
-        return x, q, k, v
-
-
+    
+    
 class Transformer(nn.Module):
     def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
                  text_layer=False, design_details=None):
@@ -756,52 +672,78 @@ class Transformer_SelectPatch(nn.Module):
         self.proj = torch.load("/home/gotoyuta/lab/Domain-Forgetting/proj-vit-b16.pt", weights_only=True) # FIXME
         self.proj.requires_grad = False
         self.patch_selection = True
+        self.select_method = design_details["select_method"]
 
-    def forward(self, x: torch.Tensor, selective_feature: Union[torch.Tensor, NoneType]=None):
-        if self.text_layer :
-            if "Local" in self.current_trainer:
-                for i in range(self.layers):
-                    x, q, k, v = self.resblocks[i](x)
-                return x, q, k, v
-            else:
-                return self.resblocks(x)
-        else:
-            if "Local" in self.current_trainer:
-                if self.patch_selection:
-                    for i in range(self.layers):
-                        if i < self.prompts_needed - 1:
-                            x, q, k, v = self.resblocks[i](x)
-                        elif i == self.prompts_needed - 1:
-                            x, q, k, v = self.resblocks[i](x)
-
-                            ##########value featrureの準備########
-                            v_proj = v @ self.proj
-                            normalized_v = v_proj / v_proj.norm(dim=-1, keepdim=True)
-                            normalized_v = normalized_v.permute(1, 0, 2) # LND -> NLD
-
-                            local_logits = normalized_v @ selective_feature.t()
-                            local_entropy = get_entropy_local(local_logits[:, 1 + self.n_ctx_visual:])
-                            topk_index = torch.topk(local_entropy, k=self.topk, dim=1)[1]
-                            mask = torch.zeros_like(local_entropy)
-                            mask.scatter_(1, topk_index, 1)
-                            margine_context_mask = torch.ones((mask.shape[0], 1 + self.n_ctx_visual)).cuda()
-                            mask = torch.cat((margine_context_mask, mask), dim = 1).half()
-                            x_masked = x.permute(1, 0, 2) * mask.unsqueeze(-1)
-                            x_masked = x_masked.permute(1, 0, 2)
-                            # return x, q, k, v, x_masked.permute(1, 0, 2)
-                            #################################
-                            # patch select function
-                            ##################################
-                        else :
-                            x, q, k, v = self.resblocks[i](x)
-                            x_masked, _, _, v_masked = self.resblocks[i](x_masked)
-                    return x, q, k, v, x_masked, v_masked
-                else :
+    def forward(self, x: torch.Tensor, selective_feature: Union[torch.Tensor, NoneType] = None):
+        if not self.training:
+            if self.text_layer :
+                if "Local" in self.current_trainer:
                     for i in range(self.layers):
                         x, q, k, v = self.resblocks[i](x)
                     return x, q, k, v
+                else:
+                    return self.resblocks(x)
+            else :
+                if "Local" in self.current_trainer:
+                    for i in range(self.layers):
+                        x, q, k, v = self.resblocks[i](x)
+                    return x, q, k, v, None, None
+                else:
+                    return self.resblocks(x)
+        else:
+            if self.text_layer :
+                if "Local" in self.current_trainer:
+                    for i in range(self.layers):
+                        x, q, k, v = self.resblocks[i](x)
+                    return x, q, k, v
+                else:
+                    return self.resblocks(x)
             else:
-                return self.resblocks(x)
+                if "Local" in self.current_trainer:
+                    if self.patch_selection:
+                        for i in range(self.layers):
+                            if i < self.prompts_needed - 1:
+                                x, q, k, v = self.resblocks[i](x)
+                            elif i == self.prompts_needed - 1:
+                                x, q, k, v = self.resblocks[i](x)
+
+                                ##########value featrureの準備########
+                                v_proj = v @ self.proj
+                                normalized_v = v_proj / v_proj.norm(dim=-1, keepdim=True)
+                                normalized_v = normalized_v.permute(1, 0, 2) # LND -> NLD
+
+                                if self.select_method == "entropy":
+                                    local_logits = normalized_v @ selective_feature.t()
+                                    local_entropy = get_entropy_local(local_logits[:, 1 + self.n_ctx_visual:])
+                                    topk_index = torch.topk(local_entropy, k=self.topk, dim=1)[1]
+                                    mask = torch.zeros_like(local_entropy)
+                                elif self.select_method == "block_shuffle_distill":
+                                    domain_specific_features = selective_feature.unsqueeze(1)
+                                    domain_focus_simmap = torch.matmul(normalized_v[:, 1 + self.n_ctx_visual:,:], domain_specific_features.transpose(-1, -2)).squeeze(-1)
+                                    topk_index = torch.topk(domain_focus_simmap, k=self.topk, dim=1)[1]
+                                    mask = torch.zeros_like(domain_focus_simmap)
+                                # if self.input_type == "image":
+                                mask.scatter_(1, topk_index, 1)
+                                margine_context_mask = torch.ones((mask.shape[0], 1 + self.n_ctx_visual)).cuda()
+                                mask = torch.cat((margine_context_mask, mask), dim = 1).half()
+                                x_masked = x.permute(1, 0, 2) * mask.unsqueeze(-1)
+                                x_masked = x_masked.permute(1, 0, 2)
+
+                                # return x, q, k, v, x_masked, v_masked
+                                # return x, q, k, v, x_masked.permute(1, 0, 2)
+                                #################################
+                                # patch select function
+                                ##################################
+                            else :
+                                x, q, k, v = self.resblocks[i](x)
+                                x_masked, _, _, v_masked = self.resblocks[i](x_masked)
+                        return x, q, k, v, x_masked, v_masked
+                    else :
+                        for i in range(self.layers):
+                            x, q, k, v = self.resblocks[i](x)
+                        return x, q, k, v
+                else:
+                    return self.resblocks(x)
 
 
 class VisionTransformer(nn.Module):
@@ -1057,7 +999,7 @@ class VisionTransformer_Local_SelectPatch(nn.Module):
                 coordinates.append((x, y))
         return coordinates
 
-    def forward(self, x: torch.Tensor, select_features: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, select_features: Union[torch.Tensor, NoneType]=None, input_type: Union[str, NoneType] = "image") -> torch.Tensor:
         x = self.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
@@ -1073,31 +1015,35 @@ class VisionTransformer_Local_SelectPatch(nn.Module):
         x = self.ln_pre(x)
 
         x = x.permute(1, 0, 2)  # NLD -> LND
-        x, q, k, v, x_masked, v_masked = self.transformer(x, select_features)
+        x, q, k, v, x_masked, v_masked = self.transformer(x, select_features, input_type)
         x = x.permute(1, 0, 2)  # LND -> NLD
         B, _, C = x[:, 1:].shape
         x = self.ln_post(x[:, 0, :])
-
-        x_masked = x_masked.permute(1, 0, 2)  # LND -> NLD
-        x_masked = self.ln_post(x_masked[:, 0, :])
+        if self.training:
+            x_masked = x_masked.permute(1, 0, 2)  # LND -> NLD
+            x_masked = self.ln_post(x_masked[:, 0, :])
 
         if self.return_local_features:
             v = v.permute(1, 0, 2)
             v = self.ln_post(v)
             v = v[:, 1:]
             v = v.reshape(B, -1, C).contiguous()
-
-            v_masked = v_masked.permute(1, 0, 2)
-            v_masked = self.ln_post(v_masked)
-            v_masked = v_masked[:, 1:]
-            v_masked = v_masked.reshape(B, -1, C).contiguous()
+            if self.training :
+                if self.transformer.input_type == "image":
+                    v_masked = v_masked.permute(1, 0, 2)
+                    v_masked = self.ln_post(v_masked)
+                    v_masked = v_masked[:, 1:]
+                    v_masked = v_masked.reshape(B, -1, C).contiguous()
         if self.proj is not None:
             x = x @ self.proj
             v = v @ self.proj
-            x_masked = x_masked @ self.proj
-            v_masked = v_masked @ self.proj
-
-        return x, v, x_masked, v_masked
+            if self.training :
+                x_masked = x_masked @ self.proj
+                v_masked = v_masked @ self.proj
+        if self.training:
+            return x, v, x_masked, v_masked
+        else :
+            return x, v, None, None
 
 
 class CLIP(nn.Module):
