@@ -48,6 +48,7 @@ CUSTOM_TEMPLATES = {
     "DomainNetMiniDF": "a photo of a {}",
     "VLCSDF": "a photo of a {}",
     "Office31DF": "a photo of a {}",
+    "VisDA17D": "a photo of a {}",
 }
 
 def load_clip_to_cpu(cfg):
@@ -62,7 +63,7 @@ def load_clip_to_cpu(cfg):
 
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
-    design_details = {"trainer": 'IVLP_VL_Adapter_Local_SelectPatch',
+    design_details = {"trainer": 'IVLP_VL_Adapter_Local_SelectPatch_FullMask',
                       "vision_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION,
                       "language_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT, "vision_ctx": cfg.TRAINER.IVLP.N_CTX_VISION,
                       "language_ctx": cfg.TRAINER.IVLP.N_CTX_TEXT,
@@ -325,7 +326,7 @@ class Adapter(nn.Module):
         return x.type(self.dtype)
 
 @TRAINER_REGISTRY.register()
-class IVLP_VL_Adapter_Local_SelectPatch(TrainerDF_Local_SelectPatch):
+class IVLP_VL_Adapter_Local_SelectPatch_FullMask(TrainerDF_Local_SelectPatch):
     def __init__(self, cfg):
         super().__init__(cfg)
     def check_cfg(self, cfg):
