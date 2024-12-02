@@ -4,3 +4,4 @@ output/
 gpuid.sh
 test/
 proj-vit-b16.pt
+ln_post_weight.pt

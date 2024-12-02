@@ -67,6 +67,10 @@ import trainers.independentVL_VLAdapter_DC
 import trainers.independentVL_VLAdapter_NNL_Divided
 import trainers.independentVL_VLAdapter_Local
 import trainers.independent_VLAdapter_SelectPatch
+import trainers.independent_VLAdapter_SelectPatch_FullMask
+
+######### Baseline
+import trainers.clipfit_df
 
 def print_args(args, cfg):
     print("***************")
@@ -166,6 +170,7 @@ def extend_cfg(cfg, args):
     cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.TOPK = 190
     cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.ONLY_MASKED = False
     cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.SELECT_METHOD = "block_shuffle_distill"
+    cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.SELECT_LAYER = 9
 
     cfg.TRAINER.COOP_W_ADAPTER = CN()
 

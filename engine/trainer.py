@@ -31,6 +31,30 @@ import pandas as pd
 from torchvision.transforms import v2
 from clip import clip
 
+CUSTOM_TEMPLATES = {
+    "OxfordPets": "a photo of a {}, a type of pet.",
+    "OxfordFlowers": "a photo of a {}, a type of flower.",
+    "FGVCAircraft": "a photo of a {}, a type of aircraft.",
+    "DescribableTextures": "{} texture.",
+    "EuroSAT": "a centered satellite photo of {}.",
+    "StanfordCars": "a photo of a {}.",
+    "Food101": "a photo of {}, a type of food.",
+    "SUN397": "a photo of a {}.",
+    "Caltech101": "a photo of a {}.",
+    "UCF101": "a photo of a person doing {}.",
+    "ImageNet": "a photo of a {}.",
+    "ImageNetSketch": "a photo of a {}.",
+    "ImageNetV2": "a photo of a {}.",
+    "ImageNetA": "a photo of a {}.",
+    "ImageNetR": "a photo of a {}.",
+    "OfficeHomeDF": "a photo of a {}.",
+    "DomainNetDF": "a photo of a {}",
+    "PACSDF": "a photo of a {}",
+    "DomainNetMiniDF": "a photo of a {}",
+    "VLCSDF": "a photo of a {}",
+    "Office31DF": "a photo of a {}",
+}
+
 def load_clip_to_cpu_expert(cfg):
     backbone_name = cfg.MODEL.BACKBONE.NAME
     url = clip._MODELS[backbone_name]
@@ -845,6 +869,12 @@ class TrainerDF_Local_SelectPatch(TrainerDF_Local):
                     output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat, domain_logits, domain_logits_masked = self.model(image)
                 else :
                     output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat = self.model(image)
+            elif self.select_method == "entropy_distill":
+                # text_features = self.model_expert.encode_text()
+                if self.use_domain_classifier_loss:
+                    output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat, domain_logits, domain_logits_masked = self.model(image, selection_feature=self.text_features_expert)
+                else :
+                    output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat = self.model(image, selection_feature=self.text_features_expert)
             elif self.select_method == "block_shuffle_distill":
                 destructed_image = image
                 destructed_image = self.blur(image)
@@ -861,7 +891,7 @@ class TrainerDF_Local_SelectPatch(TrainerDF_Local):
                 destructed_image = self.blur(image)
                 destructed_image = get_jigsaw_tensor(destructed_image, resize=(224,224), grid=self.grid_num)
                 destructed_image = self.resize(destructed_image)
-
+                domain_specific_features = self.model.encode_image()
                 if self.use_domain_classifier_loss:
                     output, output_masked, local_output, img_feat, img_feat_masked, txt_feat, local_img_feat, domain_logits, domain_logits_masked = self.model(image, block_shuffled_img=destructed_image)
                 else :
