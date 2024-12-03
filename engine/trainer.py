@@ -319,7 +319,7 @@ class TrainerDF(SimpleTrainer):
         for batch_idx, batch in enumerate(tqdm(data_loader)):
             input, label, domain = self.parse_batch_test(batch)
             if self.use_domain_classifier_loss :
-                output, img_feat, txt_feat, _ = self.model_inference(input)
+                output, img_feat, txt_feat, domain_logit = self.model_inference(input)
             else :
                 output, img_feat, txt_feat = self.model_inference(input)
             self.evaluator.process(output, label)
@@ -330,17 +330,41 @@ class TrainerDF(SimpleTrainer):
             # for del_domain in del_domain_list:
             del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
             del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
-
-            eval_dict = compute_acc_for_df_eval(
-                eval_dict,
-                output,
-                label,
-                prv_domain_mask,
-                del_domain_mask,
-                domain,
-                self.domain_list,
-                self.device
-            ) 
+            if self.is_domain_divided:
+                target_label = domain
+            else :
+                target_label = prv_domain_mask.int().long()
+            if self.use_domain_classifier_loss:
+                eval_dict = compute_acc_for_df_eval(
+                    eval_dict,
+                    output,
+                    label,
+                    prv_domain_mask,
+                    del_domain_mask,
+                    domain,
+                    self.domain_list,
+                    domain_logit,
+                    target_label,
+                    self.is_domain_divided,
+                    self.use_domain_classifier_loss,
+                    self.device
+                )
+            else :
+                eval_dict = compute_acc_for_df_eval(
+                    eval_dict,
+                    output,
+                    label,
+                    prv_domain_mask,
+                    del_domain_mask,
+                    domain,
+                    self.domain_list,
+                    None,
+                    target_label,
+                    self.is_domain_divided,
+                    self.use_domain_classifier_loss,
+                    self.device
+                )
+                pass
             if batch_idx == 0:
                 label_all = label
                 domain_all = domain
@@ -412,7 +436,21 @@ class TrainerDF(SimpleTrainer):
             for domain_name in self.domain_list:
                 acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
                 print(f"{domain_name} : {acc:.5f}")
+            if self.use_domain_classifier_loss:
+                print("==================domain DC accuracy==================")
+                if self.is_domain_divided:
+                    for domain_name in self.domain_list:
+                        acc = eval_dict[f"correct_{domain_name}_DC"] / eval_dict[f"total_{domain_name}_DC"]
+                        print(f"{domain_name} : {acc:.5f}")
+                else:
+                    for domain_name in ["prv", "del"]:
+                        acc = eval_dict[f"correct_{domain_name}_DC"] / eval_dict[f"total_{domain_name}_DC"]
+                        print(f"{domain_name} : {acc:.5f}")
+                acc = eval_dict["correct_domain"] / eval_dict["total_domain"]
+                print("==================domain DC accuracy tot==================")
+                print(f"domain acc : {acc:.5f}")
             print("===================================================")
+
 
         for k, v in results.items():
             tag = f"{split}/{k}"
@@ -427,6 +465,7 @@ class TrainerDF(SimpleTrainer):
             pass
         else:
             self._writer.add_embedding(mat, meta_data, label_img, global_step, tag)
+
 from utils.loss_fn import entropy_local_topk
 class TrainerDF_Local(TrainerDF):
     def __init__(self, cfg):
