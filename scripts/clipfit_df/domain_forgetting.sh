@@ -4,20 +4,20 @@ export CUDA_VISIBLE_DEVICES=$1
 
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
-TRAINER=IVLP_VL_Adapter
+TRAINER=ClipFit_DF
 
 DATASET=$2
 SEED=$3
 
 CFG=$4 # vit_b16_ep50
-NCTX=$5
-DEPTH_VISION=$6
-DEPTH_TEXT=$7
-USE_DOMAIN_CLS_LOSS=${8}
-USE_NEAREST_NEIGHBOR_LOSS=${9}
-IS_DOMAIN_DIVIDED=${10}
-SHOTS=${11}
-DOMAIN_LIST=("${@:12}")
+# NCTX=$5
+# DEPTH_VISION=$6
+# DEPTH_TEXT=$7
+# USE_DOMAIN_CLS_LOSS=${8}
+# USE_NEAREST_NEIGHBOR_LOSS=${9}
+# IS_DOMAIN_DIVIDED=${10}
+SHOTS=${5}
+DOMAIN_LIST=("${@:6}")
 
 DOMAIN_SEC=$(IFS=-; echo "${DOMAIN_LIST[*]}")
 DOMAIN_COUNT=${#DOMAIN_LIST[@]}
@@ -45,8 +45,8 @@ if [ "$USE_NEAREST_NEIGHBOR_LOSS" = "true" ]; then
     USE_NEAREST_NEIGHBOR_LOSS_FLAG="--use_nearest_neighbor_loss"
 fi
 
-DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}/seed${SEED}/${TODAY}
-CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}_seed${SEED}.csv
+DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/seed${SEED}/${TODAY}
+CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_shots${SHOTS}_seed${SEED}.csv
 
 if [ -d "$DIR" ]; then
     echo "Results are available in ${DIR}. Resuming..."
@@ -70,12 +70,12 @@ else
     --forget_domains "${DOMAIN_LIST[@]}" \
     --output-dir ${DIR} \
     --num_shots ${SHOTS} \
-    ${IS_DOMAIN_DIVIDED_FLAG} \
-    ${USE_DOMAIN_CLS_LOSS_FLAG} \
-    ${USE_NEAREST_NEIGHBOR_LOSS_FLAG} \
-    --csv_file_path ${CSV_FILE_PATH} \
-    TRAINER.IVLP.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
-    TRAINER.IVLP.N_CTX_VISION ${NCTX} \
-    TRAINER.IVLP.PROMPT_DEPTH_TEXT ${DEPTH_TEXT} \
-    TRAINER.IVLP.N_CTX_TEXT ${NCTX}
+    --csv_file_path ${CSV_FILE_PATH} 
+    # ${IS_DOMAIN_DIVIDED_FLAG} \
+    # ${USE_DOMAIN_CLS_LOSS_FLAG} \
+    
+    # TRAINER.IVLP.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
+    # TRAINER.IVLP.N_CTX_VISION ${NCTX} \
+    # TRAINER.IVLP.PROMPT_DEPTH_TEXT ${DEPTH_TEXT} \
+    # TRAINER.IVLP.N_CTX_TEXT ${NCTX}
 fi

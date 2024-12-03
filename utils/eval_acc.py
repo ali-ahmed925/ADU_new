@@ -37,7 +37,19 @@ def compute_acc_for_df(output, target, prv_mask, del_mask, domain_label, domain_
 
     return acc_dict
 
-def compute_acc_for_df_eval(acc_dict, output, target, prv_mask, del_mask, domain_label, domain_list, device):
+def compute_acc_for_df_eval(acc_dict, 
+                            output, 
+                            target, 
+                            prv_mask, 
+                            del_mask, 
+                            domain_label, 
+                            domain_list,
+                            domain_logit,
+                            target_label,
+                            is_divided,
+                            use_domain_classifier,
+                            device
+                            ):
     # acc_dict = {}
     # acc_dict["acc"] = compute_accuracy(output, target)[0].item()
     false_check_tensor = torch.zeros_like(prv_mask, dtype=torch.bool)
@@ -76,7 +88,35 @@ def compute_acc_for_df_eval(acc_dict, output, target, prv_mask, del_mask, domain
             else :
                 acc_dict[f"correct_{domain}"] = correct
                 acc_dict[f"total_{domain}"] = total
-            # acc_dict[f"{domain}"] = compute_accuracy(output[mask], target[mask])[0].item()
+    if use_domain_classifier:
+        correct, total = process(domain_logit, target_label)
+        if "correct_domain" in acc_dict :
+            acc_dict["correct_domain"] += correct
+            acc_dict["total_domain"] += total
+        else :
+            acc_dict["correct_domain"] = correct
+            acc_dict["total_domain"] = total
+        if is_divided :
+            for domain in domain_list:
+                mask = torch.isin(target_label, torch.tensor([domain_list.index(domain)]).to(device)) # (domain_label != domain_list.index(domain))
+                correct, total = process(domain_logit[mask], target_label[mask])
+                if f"correct_{domain}_DC" in acc_dict:
+                    acc_dict[f"correct_{domain}_DC"] += correct
+                    acc_dict[f"total_{domain}_DC"] += total
+                else :
+                    acc_dict[f"correct_{domain}_DC"] = correct
+                    acc_dict[f"total_{domain}_DC"] = total
+        else :
+            for domain in ["del", "prv"] :
+                mask = torch.isin(target_label, torch.tensor([["prv", "del"].index(domain)]).to(device)) # (domain_label != domain_list.index(domain))
+                correct, total = process(domain_logit[mask], target_label[mask])
+                if f"correct_{domain}_DC" in acc_dict:
+                    acc_dict[f"correct_{domain}_DC"] += correct
+                    acc_dict[f"total_{domain}_DC"] += total
+                else :
+                    acc_dict[f"correct_{domain}_DC"] = correct
+                    acc_dict[f"total_{domain}_DC"] = total
+                # acc_dict[f"{domain}"] = compute_accuracy(output[mask], target[mask])[0].item()
 
     return acc_dict
 

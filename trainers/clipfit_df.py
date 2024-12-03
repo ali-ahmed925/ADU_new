@@ -46,6 +46,7 @@ CUSTOM_TEMPLATES = {
     "DomainNetMiniDF": "a photo of a {}",
     "VLCSDF": "a photo of a {}",
     "Office31DF": "a photo of a {}",
+    "VisDA17DF": "a photo of a {}",
 }
 
 
