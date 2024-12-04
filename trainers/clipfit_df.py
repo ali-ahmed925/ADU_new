@@ -309,7 +309,7 @@ class ClipFit_DF(TrainerDF):
         self.register_model("prompt_learner", self.model.prompt_learner, self.optim, self.sched)
 
         self.scaler = GradScaler() if cfg.TRAINER.COOP.PREC == "amp" else None
-
+        self.use_kd = cfg.TRAINER.ClipFit_DF.USE_KD
         # Note that multi-gpu training could be slow because CLIP's size is
         # big, which slows down the copy operation in DataParallel
         device_count = torch.cuda.device_count()
@@ -359,7 +359,10 @@ class ClipFit_DF(TrainerDF):
                     loss_del = entropy(output[del_domain_mask])
                 # print(f'lambda:{lambda_}')
                 lambda_=8.
-                loss_sim = self.model.prompt_learner.forward_similarity()
+                if self.use_kd:
+                    loss_sim = self.model.prompt_learner.forward_similarity()
+                else :
+                    loss_sim = 0
                 loss = loss_prv - loss_del + lambda_ * loss_sim
 
                 # select target label to calculate domain class label
@@ -387,7 +390,7 @@ class ClipFit_DF(TrainerDF):
                 "loss": loss.item(),
                 "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
                 "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
-                "loss_sim": loss_sim.item() 
+                "loss_sim": loss_sim.item() if isinstance(loss_sim, torch.Tensor) else loss_sim
                 # "acc": compute_accuracy(output, label)[0].item(),
             }
             acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
