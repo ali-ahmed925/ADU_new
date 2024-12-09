@@ -172,10 +172,16 @@ class CustomCLIP(nn.Module):
         self.vision_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
         self.text_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
         if cfg.USE_DOMAIN_CLASIFIER_LOSS:
-            if cfg.IS_DOMAIN_DIVIDED:
-                self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
+            if cfg.DOMAIN_CLASS_DIVIDED:
+                if cfg.IS_DOMAIN_DIVIDED:
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
+                else :
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
             else :
-                self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+                if cfg.IS_DOMAIN_DIVIDED:
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
+                else :
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
             self.domain_classifier.to(self.dtype)
         self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
 
