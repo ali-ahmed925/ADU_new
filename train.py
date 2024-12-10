@@ -68,6 +68,7 @@ import trainers.independentVL_VLAdapter_NNL_Divided
 import trainers.independentVL_VLAdapter_Local
 import trainers.independent_VLAdapter_SelectPatch
 import trainers.independent_VLAdapter_SelectPatch_FullMask
+import trainers.independent_VLAdapter_Prompt
 
 ######### Baseline
 import trainers.clipfit_df
@@ -163,6 +164,10 @@ def extend_cfg(cfg, args):
     cfg.DOMAIN_CLASS_DIVIDED = args.domain_class_divided
     cfg.IS_DOMAIN_DIVIDED = args.is_domain_divided
     cfg.CSV_FILE_PATH = args.csv_file_path
+
+    cfg.ADD_LINEAR = False
+    cfg.USE_CLASSTOKEN = False
+    cfg.USE_CROSSATTENTION = False
 
     cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
     cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False
