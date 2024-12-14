@@ -69,6 +69,7 @@ import trainers.independentVL_VLAdapter_Local
 import trainers.independent_VLAdapter_SelectPatch
 import trainers.independent_VLAdapter_SelectPatch_FullMask
 import trainers.independent_VLAdapter_Prompt
+import trainers.independent_VLAdapter_Prompt_SelectPatch
 
 ######### Baseline
 import trainers.clipfit_df
