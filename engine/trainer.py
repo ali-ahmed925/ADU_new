@@ -116,6 +116,7 @@ class TrainerDF(SimpleTrainer):
         self.use_domain_classifier_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
         self.use_nearest_neighbor_loss = cfg.USER_NEAREST_NEIGHBOR_LOSS
         self.is_domain_divided = cfg.IS_DOMAIN_DIVIDED
+        self.domain_class_divided = cfg.DOMAIN_CLASS_DIVIDED
         if self.use_nearest_neighbor_loss:
             self.nnl = SoftNearestNeighborsLoss()
 
@@ -215,10 +216,25 @@ class TrainerDF(SimpleTrainer):
                 loss = loss_prv - loss_del
 
                 # select target label to calculate domain class label
-                if self.is_domain_divided:
-                    target_label = domain
+                if self.domain_class_divided :
+                    if self.is_domain_divided:
+                        target_label_list = []
+                        for lb, dm in zip(label, domain):
+                            new_label = int(lb.item()*len(self.domain_list) + dm.item())
+                            target_label_list.append(new_label)
+                        target_label = torch.tensor(target_label_list).to(self.device)
+                    else :
+                        label_div = prv_domain_mask.int().long()
+                        target_label_list = []
+                        for lb, dm in zip(label_div, domain):
+                            new_label = int(lb.item()*len(self.domain_list) + dm.item())
+                            target_label_list.append(new_label)
+                        target_label = torch.tensor(target_label_list).to(self.device)
                 else :
-                    target_label = prv_domain_mask.int().long()
+                    if self.is_domain_divided:
+                        target_label = domain
+                    else :
+                        target_label = prv_domain_mask.int().long()
 
                 ######################################################################
                 # domain loss (domain classifier loss, nearest neighbor loss or both)
@@ -330,41 +346,74 @@ class TrainerDF(SimpleTrainer):
             # for del_domain in del_domain_list:
             del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
             del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
-            if self.is_domain_divided:
-                target_label = domain
+            if self.domain_class_divided :
+                if self.is_domain_divided:
+                    target_label_list = []
+                    for lb, dm in zip(label, domain):
+                        new_label = int(lb.item()*len(self.domain_list) + dm.item())
+                        target_label_list.append(new_label)
+                    target_label = torch.tensor(target_label_list).to(self.device)
+                else :
+                    label_div = prv_domain_mask.int().long()
+                    target_label_list = []
+                    for lb, dm in zip(label_div, domain):
+                        new_label = int(lb.item()*len(self.domain_list) + dm.item())
+                        target_label_list.append(new_label)
+                    target_label = torch.tensor(target_label_list).to(self.device)
             else :
-                target_label = prv_domain_mask.int().long()
-            if self.use_domain_classifier_loss:
-                eval_dict = compute_acc_for_df_eval(
-                    eval_dict,
-                    output,
-                    label,
-                    prv_domain_mask,
-                    del_domain_mask,
-                    domain,
-                    self.domain_list,
-                    domain_logit,
-                    target_label,
-                    self.is_domain_divided,
-                    self.use_domain_classifier_loss,
-                    self.device
-                )
+                if self.is_domain_divided:
+                    target_label = domain
+                else :
+                    target_label = prv_domain_mask.int().long()
+            if self.domain_class_divided:
+                if self.use_domain_classifier_loss:
+                    eval_dict = compute_acc_for_df_eval(
+                        eval_dict,
+                        output,
+                        label,
+                        prv_domain_mask,
+                        del_domain_mask,
+                        domain,
+                        self.domain_list,
+                        domain_logit,
+                        target_label,
+                        self.is_domain_divided,
+                        self.use_domain_classifier_loss,
+                        self.device,
+                        domain_class_divided=self.domain_class_divided,
+                        classnames=self.classnames
+                    )
             else :
-                eval_dict = compute_acc_for_df_eval(
-                    eval_dict,
-                    output,
-                    label,
-                    prv_domain_mask,
-                    del_domain_mask,
-                    domain,
-                    self.domain_list,
-                    None,
-                    target_label,
-                    self.is_domain_divided,
-                    self.use_domain_classifier_loss,
-                    self.device
-                )
-                pass
+                if self.use_domain_classifier_loss:
+                    eval_dict = compute_acc_for_df_eval(
+                        eval_dict,
+                        output,
+                        label,
+                        prv_domain_mask,
+                        del_domain_mask,
+                        domain,
+                        self.domain_list,
+                        domain_logit,
+                        target_label,
+                        self.is_domain_divided,
+                        self.use_domain_classifier_loss,
+                        self.device
+                    )
+                else :
+                    eval_dict = compute_acc_for_df_eval(
+                        eval_dict,
+                        output,
+                        label,
+                        prv_domain_mask,
+                        del_domain_mask,
+                        domain,
+                        self.domain_list,
+                        None,
+                        target_label,
+                        self.is_domain_divided,
+                        self.use_domain_classifier_loss,
+                        self.device
+                    )
             if batch_idx == 0:
                 label_all = label
                 domain_all = domain
@@ -436,19 +485,29 @@ class TrainerDF(SimpleTrainer):
             for domain_name in self.domain_list:
                 acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
                 print(f"{domain_name} : {acc:.5f}")
-            if self.use_domain_classifier_loss:
-                print("==================domain DC accuracy==================")
-                if self.is_domain_divided:
-                    for domain_name in self.domain_list:
-                        acc = eval_dict[f"correct_{domain_name}_DC"] / eval_dict[f"total_{domain_name}_DC"]
-                        print(f"{domain_name} : {acc:.5f}")
-                else:
-                    for domain_name in ["prv", "del"]:
-                        acc = eval_dict[f"correct_{domain_name}_DC"] / eval_dict[f"total_{domain_name}_DC"]
-                        print(f"{domain_name} : {acc:.5f}")
-                acc = eval_dict["correct_domain"] / eval_dict["total_domain"]
-                print("==================domain DC accuracy tot==================")
-                print(f"domain acc : {acc:.5f}")
+            if self.domain_class_divided:
+                if self.use_domain_classifier_loss:
+                    print("==================domain DC accuracy==================")
+                    if self.is_domain_divided:
+                        for idx in range(len(self.domain_list)*len(self.classnames)):
+                            cls = self.classnames[int(idx / len(self.domain_list))]
+                            dm = self.domain_list[int(idx % len(self.domain_list))]
+                            acc = eval_dict[f"correct_{cls}_{dm}_DC"] / eval_dict[f"total_{cls}_{dm}_DC"]
+                            print(f"{cls} {dm} : {acc:.5f}")
+            else:
+                if self.use_domain_classifier_loss:
+                    print("==================domain DC accuracy==================")
+                    if self.is_domain_divided:
+                        for domain_name in self.domain_list:
+                            acc = eval_dict[f"correct_{domain_name}_DC"] / eval_dict[f"total_{domain_name}_DC"]
+                            print(f"{domain_name} : {acc:.5f}")
+                    else:
+                        for domain_name in ["prv", "del"]:
+                            acc = eval_dict[f"correct_{domain_name}_DC"] / eval_dict[f"total_{domain_name}_DC"]
+                            print(f"{domain_name} : {acc:.5f}")
+                    acc = eval_dict["correct_domain"] / eval_dict["total_domain"]
+                    print("==================domain DC accuracy tot==================")
+                    print(f"domain acc : {acc:.5f}")
             print("===================================================")
 
 

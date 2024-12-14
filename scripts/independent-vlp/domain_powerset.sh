@@ -15,11 +15,12 @@ for ((i = 1; i < 15; i++)); do
   done
   # コマンドを実行
   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
-  bash scripts/independent-vlp/domain_forgetting.sh $gpu_id office_home_df 0 vit_b16_ep50 8 $vision_depth $text_depth $selected_domains_str
+  bash scripts/independent-vlp/domain_forgetting.sh $gpu_id office_home_df 1 vit_b16_ep50 8 $vision_depth $text_depth $selected_domains_str
   # echo "${selected_domains[@]}"
 done
 
-domains=("cartoon" "art_painting" "sketch" "photo")
+
+domains=("clipart" "painting" "real" "sketch")
 for ((i = 1; i < 15; i++)); do
   # バイナリ数として各組み合わせを選択
   selected_domains=()
@@ -30,6 +31,9 @@ for ((i = 1; i < 15; i++)); do
   done
   # コマンドを実行
   selected_domains_str=$(IFS=" "; echo "${selected_domains[*]}")
-  bash scripts/independent-vlp/domain_forgetting.sh $gpu_id pacs_df 0 vit_b16_ep50 8 $vision_depth $text_depth $selected_domains_str
+  bash scripts/independent-vlp/domain_forgetting.sh $gpu_id domainnet_mini_df 1 vit_b16_ep50 8 $vision_depth $text_depth $selected_domains_str
   # echo "${selected_domains[@]}"
 done
+
+bash scripts/independent-vlp-vladapter/domain_forgetting.sh $gpu_id visda17_df 1 vit_b16_ep50 8 $vision_depth $text_depth synthetic
+bash scripts/independent-vlp-vladapter/domain_forgetting.sh $gpu_id visda17_df 1 vit_b16_ep50 8 $vision_depth $text_depth real

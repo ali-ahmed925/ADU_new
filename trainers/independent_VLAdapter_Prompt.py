@@ -39,10 +39,14 @@ def load_clip_to_cpu(cfg):
 
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
-    design_details = {"trainer": 'IVLP',
+    design_details = {"trainer": 'IVLP_VL_Adapter_Prompt',
                       "vision_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION,
                       "language_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT, "vision_ctx": cfg.TRAINER.IVLP.N_CTX_VISION,
-                      "language_ctx": cfg.TRAINER.IVLP.N_CTX_TEXT}
+                      "language_ctx": cfg.TRAINER.IVLP.N_CTX_TEXT,
+                      "add_linear": cfg.ADD_LINEAR,
+                      "use_classtoken": cfg.USE_CLASSTOKEN,
+                      "use_cross_attention": cfg.USE_CROSSATTENTION,
+                      }
     model = clip.build_model(state_dict or model.state_dict(), design_details)
 
     return model
@@ -169,6 +173,21 @@ class CustomCLIP(nn.Module):
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
+        self.vision_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        self.text_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        if cfg.USE_DOMAIN_CLASIFIER_LOSS:
+            if cfg.DOMAIN_CLASS_DIVIDED:
+                if cfg.IS_DOMAIN_DIVIDED:
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
+                else :
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
+            else :
+                if cfg.IS_DOMAIN_DIVIDED:
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
+                else :
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+            self.domain_classifier.to(self.dtype)
+        self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
 
     def forward(self, image, label=None):
         tokenized_prompts = self.tokenized_prompts
@@ -177,19 +196,39 @@ class CustomCLIP(nn.Module):
         prompts = self.prompt_learner()
         text_features = self.text_encoder(prompts, tokenized_prompts)
         image_features = self.image_encoder(image.type(self.dtype))
+        
+        image_features = self.vision_adapter(image_features)
+        text_features = self.text_adapter(text_features)
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         logits = logit_scale * image_features @ text_features.t()
 
+        if self.use_domain_cls_loss:
+            domain_logit = self.domain_classifier(image_features)
+            return logits, image_features, text_features, domain_logit
         # if self.prompt_learner.training:
         #     return F.cross_entropy(logits, label)
 
         return logits, image_features, text_features
 
+class Adapter(nn.Module):
+    def __init__(self, c_in, dtype, reduction=4):
+        super(Adapter, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(c_in, c_in // reduction, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True),
+            nn.Linear(c_in // reduction, c_in, bias=False).to(dtype=dtype),
+            nn.ReLU(inplace=True)
+        )
+        self.dtype = dtype
+
+    def forward(self, x):
+        x = self.fc(x)
+        return x.type(self.dtype)
 
 @TRAINER_REGISTRY.register()
-class IVLP(TrainerDF):
+class IVLP_VL_Adapter_Prompt(TrainerDF):
         
     def check_cfg(self, cfg):
         assert cfg.TRAINER.IVLP.PREC in ["fp16", "fp32", "amp"]
@@ -215,6 +254,14 @@ class IVLP(TrainerDF):
             if name_to_update not in name:
                 # Make sure that VPT prompts are updated
                 if "VPT" in name:
+                    param.requires_grad_(True)
+                elif "adapter" in name:
+                    param.requires_grad_(True)
+                elif "domain_classifier" in name:
+                    param.requires_grad_(True)
+                elif "cross_attn" in name:
+                    param.requires_grad_(True)
+                elif "added_linear" in name:
                     param.requires_grad_(True)
                 else:
                     param.requires_grad_(False)

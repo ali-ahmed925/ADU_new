@@ -68,6 +68,8 @@ import trainers.independentVL_VLAdapter_NNL_Divided
 import trainers.independentVL_VLAdapter_Local
 import trainers.independent_VLAdapter_SelectPatch
 import trainers.independent_VLAdapter_SelectPatch_FullMask
+import trainers.independent_VLAdapter_Prompt
+import trainers.independent_VLAdapter_Prompt_SelectPatch
 
 ######### Baseline
 import trainers.clipfit_df
@@ -160,8 +162,13 @@ def extend_cfg(cfg, args):
 
     cfg.USE_DOMAIN_CLASIFIER_LOSS = args.use_domain_cls_loss
     cfg.USER_NEAREST_NEIGHBOR_LOSS = args.use_nearest_neighbor_loss
+    cfg.DOMAIN_CLASS_DIVIDED = args.domain_class_divided
     cfg.IS_DOMAIN_DIVIDED = args.is_domain_divided
     cfg.CSV_FILE_PATH = args.csv_file_path
+
+    cfg.ADD_LINEAR = False
+    cfg.USE_CLASSTOKEN = False
+    cfg.USE_CROSSATTENTION = False
 
     cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
     cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False
@@ -376,6 +383,11 @@ if __name__ == "__main__":
         default=100,
         type=int,
         help="select local feat topk "
+    )
+
+    parser.add_argument(
+        "--domain_class_divided",
+        action="store_true", help="default is False"
     )
 
     parser.add_argument(
