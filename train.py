@@ -70,6 +70,7 @@ import trainers.independent_VLAdapter_SelectPatch
 import trainers.independent_VLAdapter_SelectPatch_FullMask
 import trainers.independent_VLAdapter_Prompt
 import trainers.independent_VLAdapter_Prompt_SelectPatch
+import trainers.independent_VLAdapter_Prompt_Multiple
 
 ######### Baseline
 import trainers.clipfit_df
@@ -169,6 +170,9 @@ def extend_cfg(cfg, args):
     cfg.ADD_LINEAR = False
     cfg.USE_CLASSTOKEN = False
     cfg.USE_CROSSATTENTION = False
+
+    cfg.INDEPENDENT_CROSS_ATTENTION = False
+    cfg.INDEPENDENT_LEARNABLE_VISION = False
 
     cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
     cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False
