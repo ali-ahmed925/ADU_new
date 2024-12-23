@@ -566,6 +566,7 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
         # For the first iteration i, we should not add the learnable parameters
         # as it is already been taken care of in the very start, for both text
         # and the visual branch
+        self.independent_learnable_vision = design_details["independent_learnable_vision"]
         self.text_layer = text_layer
         self.attn_mask = attn_mask
         if i != 0:
@@ -574,12 +575,17 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
                 if self.text_layer:
                     self.n_ctx_text = design_details["language_ctx"]  # hyperparameter
                     ctx_vectors = torch.empty(self.n_ctx_text, d_model)
+                    nn.init.normal_(ctx_vectors, std=0.02)
+                    self.VPT_shallow = nn.Parameter(ctx_vectors)
                 else:
                     self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
-                    ctx_vectors = torch.empty(self.n_ctx_visual, d_model)
+                    if self.independent_learnable_vision:
+                        ctx_vectors = torch.empty(self.n_ctx_visual, d_model)
+                        nn.init.normal_(ctx_vectors, std=0.02)
+                        self.VPT_shallow = nn.Parameter(ctx_vectors)
+                    else :
+                        pass
                 # Code snippet for per layer visual prompts
-                nn.init.normal_(ctx_vectors, std=0.02)
-                self.VPT_shallow = nn.Parameter(ctx_vectors)
         else:
             self.add_prompt = False
         self.insert_layer = design_details["vision_depth"] - 1
@@ -603,7 +609,7 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
         self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
-    def forward(self, x: torch.Tensor, idx: int):
+    def forward(self, x: torch.Tensor, idx: int, vpt_share: Union[torch.Tensor, NoneType] = None):
         # Will need to append the learnable tokens for this layer here
         # Check if flag was set for this layer or not
         if self.add_prompt:
@@ -612,7 +618,10 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
                 # Remove the outputs produced by learnable tokens of previous layer
                 prefix = x[0:x.shape[0] - self.n_ctx_visual, :, :]
                 # Create/configure learnable tokens of this layer
-                visual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
+                if self.independent_learnable_vision:
+                    visual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
+                else :
+                    visual_context = vpt_share.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
                 # Add the learnable tokens of this layer with the input, by replacing the previous
                 # layer learnable tokens
                 if idx == self.insert_layer :
@@ -984,6 +993,12 @@ class Transformer_Prompt(nn.Module):
                                              else ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, False,
                                                                               text_layer, i, design_details)
                                              for i in range(layers)])
+        self.independ_learnable_vision = design_details["independent_learnable_vision"]
+        if not self.independ_learnable_vision :
+            self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
+            ctx_vectors = torch.empty(self.n_ctx_visual, width)
+            nn.init.normal_(ctx_vectors, std=0.02)
+            self.VPT_shallow_share = nn.Parameter(ctx_vectors)
         
         self.current_trainer = current_trainer
         self.n_ctx_visual = design_details["vision_ctx"]
@@ -996,7 +1011,10 @@ class Transformer_Prompt(nn.Module):
             return x, q, k, v
         else:
             for i in range(self.layers):
-                x = self.resblocks[i](x, i)
+                if self.independ_learnable_vision:
+                    x = self.resblocks[i](x, i)
+                else :
+                    x = self.resblocks[i](x, i, self.VPT_shallow_share)
             return x
 
 class _UNUSED_Transformer_Prompt_Multiple(nn.Module):
@@ -1329,7 +1347,7 @@ class _UNUSED_ResidualAttentionBlock_IVLP_Prompt_Multiple(nn.Module):
         x = x + self.mlp(self.ln_2(x))
         return x
 
-class Transformer_Prompt_SelectPatch(nn.Module):
+class _UNUSED_Transformer_Prompt_SelectPatch(nn.Module):
     def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
                  text_layer=False, design_details=None):
         super().__init__()
@@ -1390,7 +1408,7 @@ class Transformer_Prompt_SelectPatch(nn.Module):
 
 
 # from utils.loss_fn import *   
-class Transformer_SelectPatch(nn.Module):
+class _UNUSED_Transformer_SelectPatch(nn.Module):
     def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
                  text_layer=False, design_details=None):
         super().__init__()
