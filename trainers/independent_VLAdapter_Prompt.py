@@ -46,6 +46,8 @@ def load_clip_to_cpu(cfg):
                       "add_linear": cfg.ADD_LINEAR,
                       "use_classtoken": cfg.USE_CLASSTOKEN,
                       "use_cross_attention": cfg.USE_CROSSATTENTION,
+                      "independent_learnable_vision": cfg.INDEPENDENT_LEARNABLE_VISION,
+                      "insert_layer": cfg.INSERT_LAYER_ATTN
                       }
     model = clip.build_model(state_dict or model.state_dict(), design_details)
 
@@ -178,12 +180,18 @@ class CustomCLIP(nn.Module):
         if cfg.USE_DOMAIN_CLASIFIER_LOSS:
             if cfg.DOMAIN_CLASS_DIVIDED:
                 if cfg.IS_DOMAIN_DIVIDED:
-                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
+                    if cfg.DATASET.NAME == "Office31DF":
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3*len(classnames))
+                    else:
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
                 else :
                     self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
             else :
                 if cfg.IS_DOMAIN_DIVIDED:
-                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
+                    if cfg.DATASET.NAME == "Office31DF":
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3)
+                    else :
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
                 else :
                     self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
             self.domain_classifier.to(self.dtype)
