@@ -172,7 +172,9 @@ def extend_cfg(cfg, args):
     cfg.USE_CROSSATTENTION = False
 
     cfg.INDEPENDENT_CROSS_ATTENTION = False
-    cfg.INDEPENDENT_LEARNABLE_VISION = False
+    cfg.INDEPENDENT_LEARNABLE_VISION = True
+
+    cfg.INSERT_LAYER_ATTN = 9
 
     cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
     cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False

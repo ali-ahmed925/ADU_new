@@ -588,7 +588,7 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
                 # Code snippet for per layer visual prompts
         else:
             self.add_prompt = False
-        self.insert_layer = design_details["vision_depth"] - 1
+        self.insert_layer = design_details["insert_layer"] - 1
         self.use_classtoken = design_details["use_classtoken"]
         # self.use_cross_attention = design_details["use_cross_attention"]
         if i == self.insert_layer:
