@@ -186,7 +186,7 @@ class TrainerDF(SimpleTrainer):
     
     def train_loop(self):
         # def train(self):
-        super().train(self.start_epoch, self.max_epoch)
+        super().train()
         return self.metrics_dict
     
     def forward_backward(self, batch):
@@ -527,13 +527,13 @@ class TrainerDF(SimpleTrainer):
                     print(f"domain acc : {acc:.5f}")
             print("===================================================")
             metrics_A = eval_dict[f"correct_prv"] / eval_dict[f"total_prv"]
-            metrics_F = eval_dict[f"correct_del"] / eval_dict[f"total_del"]
+            metrics_F = 1 - eval_dict[f"correct_del"] / eval_dict[f"total_del"]
             metrics_H = 2 * metrics_A * metrics_F / (metrics_A + metrics_F)
 
             self.metrics_dict = {
-                "A" : metrics_A,
-                "F" : metrics_F,
-                "H" : metrics_H 
+                "A" : 100 * metrics_A,
+                "F" : 100 * metrics_F,
+                "H" : 100 * metrics_H 
             }
 
 
