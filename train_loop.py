@@ -177,7 +177,7 @@ def extend_cfg(cfg, args):
 
     cfg.ADD_LINEAR = False
     cfg.USE_CLASSTOKEN = False
-    cfg.USE_CROSSATTENTION = False
+    cfg.USE_CROSSATTENTION = True
 
     cfg.INDEPENDENT_CROSS_ATTENTION = False
     cfg.INDEPENDENT_LEARNABLE_VISION = True
@@ -315,6 +315,7 @@ def main(args):
         return results
     
 def get_loop_prepare(datasetname: str)->Tuple[List[str], Dict]:
+    print(datasetname)
     if datasetname == "office_home_df":
         domain_list = ["art", "clipart", "product", "real_world"]
     elif datasetname == "domainnet_df":
@@ -519,7 +520,7 @@ if __name__ == "__main__":
     dataset_seed = args.dataset_seed
 
     exp_csv_filedir = args.output_dir + "/" + expname
-    exp_csv_filepath = exp_csv_filedir + "/results_tot.csv"
+    exp_csv_filepath = exp_csv_filedir + f"/results_tot_datasetseed{dataset_seed}.csv"
     if not osp.exists(exp_csv_filedir):
         os.makedirs(exp_csv_filedir)
 
@@ -533,7 +534,7 @@ if __name__ == "__main__":
     seed_list = []
     for seed in [1, 2, 3]:
         seed_list.append(seed)
-        exp_csv_filepath_seedwise = exp_csv_filedir + "/" + f"results_seed{seed}.csv"
+        exp_csv_filepath_seedwise = exp_csv_filedir + "/" + f"results_seed{seed}_datasetseed{dataset_seed}.csv"
         if not osp.exists(exp_csv_filepath_seedwise):
             create_csv_file(exp_csv_filepath_seedwise, len(base_dict))
         else :
@@ -547,8 +548,8 @@ if __name__ == "__main__":
             now = datetime.now()
             today = now.strftime("%Y%m%d_%H%M%S")
             forget_domain_str = "-".join(forget_domain_list)
-            args.output_dir = base_output_dir + f"_seed{seed}_datasetseed{dataset_seed}/ForgetDomain{len(forget_domain_list)}/{forget_domain_str}/{today}" 
-            args.csv_file_path = base_output_dir + f"_seed{seed}_datasetseed{dataset_seed}/ForgetDomain{len(forget_domain_list)}/{today}_results.csv"
+            args.output_dir = base_output_dir + f"/seed{seed}_datasetseed{dataset_seed}/ForgetDomain{len(forget_domain_list)}/{forget_domain_str}/{today}" 
+            args.csv_file_path = base_output_dir + f"/seed{seed}_datasetseed{dataset_seed}/ForgetDomain{len(forget_domain_list)}/results.csv"
             results = main(args)
             results_dict[f"seed{seed}"][f"forgetdomain_{len(forget_domain_list)}"]["A"].append(results["A"])
             results_dict[f"seed{seed}"][f"forgetdomain_{len(forget_domain_list)}"]["F"].append(results["F"])
