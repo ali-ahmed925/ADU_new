@@ -75,6 +75,14 @@ import trainers.independent_VLAdapter_Prompt_Multiple
 ######### Baseline
 import trainers.clipfit_df
 
+## add
+from typing import List, Tuple, Dict
+import itertools
+from datetime import datetime
+import os
+import os.path as osp
+import copy
+
 def print_args(args, cfg):
     print("***************")
     print("** Arguments **")
@@ -144,7 +152,7 @@ def extend_cfg(cfg, args):
     else :
         cfg.DATASET.FORGETDOMAINS = args.forget_domains
         # print(cfg.DATASET.FORGETDOMAINS)
-    
+    cfg.DATASET.SEED = args.dataset_seed
     cfg.BLOCK_SHUFFLE = args.is_block_shuffle
     cfg.GRID = args.grid_num
     
@@ -303,7 +311,65 @@ def main(args):
         return
 
     if not args.no_train:
-        trainer.train()
+        results = trainer.train_loop()
+        return results
+    
+def get_loop_prepare(datasetname: str)->Tuple[List[str], Dict]:
+    if datasetname == "office_home_df":
+        domain_list = ["art", "clipart", "product", "real_world"]
+    elif datasetname == "domainnet_df":
+        domain_list = [
+            "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
+        ]
+
+    elif datasetname == "domainnet_mini_df":
+        domain_list = [
+            "clipart", "painting", "real", "sketch"
+        ]
+    elif datasetname == "vlcs_df":  
+        domain_list = ["caltech", "labelme", "pascal", "sun"]
+        
+    elif datasetname == "pacs_df":  
+        domain_list = ["art_painting", "cartoon", "photo", "sketch"]
+    
+    elif datasetname == "office31_df":
+        domain_list = ["amazon", "webcam", "dslr"]
+
+    elif datasetname == "visda17_df":
+        domain_list = ["synthetic", "real"]
+    else :
+        pass # assert
+    
+    base_dict = {
+            "A" : [],
+            "F" : [],
+            "H" : []
+        }
+
+    power_set = [
+        list(subset) for i in range(1, len(domain_list)) \
+            for subset in itertools.combinations(domain_list, i)
+    ]
+
+    res_dict = {}
+    for i in range(1, len(domain_list)):
+        key_i = f"forgetdomain_{i}"
+        res_dict[key_i] = copy.deepcopy(base_dict)
+
+    return power_set, res_dict
+import csv
+def create_csv_file(filename:str, forget_domain_num: int):
+    data = [
+        ["EXPNAME", ""],
+        ["", "DATE"]
+    ]
+    for idx in range(forget_domain_num):
+        data[0].extend(["", f"Forgetdomain{idx+1}", ""])
+        data[1].extend(["H", "A", "F"])
+    with open(filename, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerows(data)
+    print(f"initialize csv file: {filename}")
 
 
 if __name__ == "__main__":
@@ -425,6 +491,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--csv_file_path", type=str, default="default.csv")
+
+    parser.add_argument("--dataset_name", type=str, default="")
+
+    parser.add_argument("--experiment_name", type=str, default="exp")
+
+    parser.add_argument("--sub_experiment_name", type=str, default="subexp")
+
+    parser.add_argument("--dataset_seed", type=int, default=1)
     
     parser.add_argument(
         "opts",
@@ -433,4 +507,100 @@ if __name__ == "__main__":
         help="modify config options using the command-line",
     )
     args = parser.parse_args()
-    main(args)
+
+    forget_domain_lists, base_dict = get_loop_prepare(args.dataset_name)
+
+    # DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}/seed${SEED}/${TODAY}
+    # CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}_seed${SEED}.csv
+    # base_output_dir = args.output_dir
+    expname = args.experiment_name
+    subexpname = args.sub_experiment_name
+    base_output_dir = args.output_dir + "/" + expname + "/" + subexpname
+    dataset_seed = args.dataset_seed
+
+    exp_csv_filedir = args.output_dir + "/" + expname
+    exp_csv_filepath = exp_csv_filedir + "/results_tot.csv"
+    if not osp.exists(exp_csv_filedir):
+        os.makedirs(exp_csv_filedir)
+
+    if not osp.exists(exp_csv_filepath):
+        create_csv_file(exp_csv_filepath, len(base_dict))
+    else :
+        pass
+
+
+    results_dict = {}
+    seed_list = []
+    for seed in [1, 2, 3]:
+        seed_list.append(seed)
+        exp_csv_filepath_seedwise = exp_csv_filedir + "/" + f"results_seed{seed}.csv"
+        if not osp.exists(exp_csv_filepath_seedwise):
+            create_csv_file(exp_csv_filepath_seedwise, len(base_dict))
+        else :
+            pass
+        results_dict[f"seed{seed}"] = copy.deepcopy(base_dict)
+        for forget_domain_list in forget_domain_lists:
+            args.forget_domains = forget_domain_list
+            args.seed = seed
+            # base_output = /path/datasetname/trainer/Exp/SubExp 
+            # + _seed{seed}_datasetseed{seed}/#FD/ForgetDomain/TODAY
+            now = datetime.now()
+            today = now.strftime("%Y%m%d_%H%M%S")
+            forget_domain_str = "-".join(forget_domain_list)
+            args.output_dir = base_output_dir + f"_seed{seed}_datasetseed{dataset_seed}/ForgetDomain{len(forget_domain_list)}/{forget_domain_str}/{today}" 
+            args.csv_file_path = base_output_dir + f"_seed{seed}_datasetseed{dataset_seed}/ForgetDomain{len(forget_domain_list)}/{today}_results.csv"
+            results = main(args)
+            results_dict[f"seed{seed}"][f"forgetdomain_{len(forget_domain_list)}"]["A"].append(results["A"])
+            results_dict[f"seed{seed}"][f"forgetdomain_{len(forget_domain_list)}"]["F"].append(results["F"])
+            results_dict[f"seed{seed}"][f"forgetdomain_{len(forget_domain_list)}"]["H"].append(results["H"])
+        
+        now = datetime.now()
+        today = now.strftime("%Y%m%d_%H%M%S")
+        data_seed = [subexpname, today]
+
+        for idx in range(len(results_dict[f"seed{seed}"])):
+            results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"] = sum(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"]) / len(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"])
+            results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"] = sum(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"]) / len(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"])
+            results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"] = sum(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"]) / len(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"])
+            data_seed.extend(
+                [
+                    results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"],
+                    results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"],
+                    results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"]
+                ]
+            )  
+        
+        with open(exp_csv_filepath_seedwise, mode="a", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow(data_seed)
+    tot_res = len(results_dict) # seed num
+    tot_num_fd = len(base_dict) # forget domain num 
+
+    fin_res = copy.deepcopy(base_dict)
+    for num_fd in range(tot_num_fd):
+        for s in seed_list:
+            fin_res[f"forgetdomain_{num_fd + 1}"]["H"].append(results_dict[f"seed{s}"][f"forgetdomain_{num_fd+1}"]["H"])
+            fin_res[f"forgetdomain_{num_fd + 1}"]["A"].append(results_dict[f"seed{s}"][f"forgetdomain_{num_fd+1}"]["A"])
+            fin_res[f"forgetdomain_{num_fd + 1}"]["F"].append(results_dict[f"seed{s}"][f"forgetdomain_{num_fd+1}"]["F"])
+        
+    now = datetime.now()
+    today = now.strftime("%Y%m%d_%H%M%S")
+    data_tot = [subexpname, today]
+    for num_fd in range(tot_num_fd):
+        fin_res[f"forgetdomain_{num_fd+1}"]["H"] = sum(fin_res[f"forgetdomain_{num_fd+1}"]["H"]) / len (fin_res[f"forgetdomain_{num_fd+1}"]["H"])
+        fin_res[f"forgetdomain_{num_fd+1}"]["A"] = sum(fin_res[f"forgetdomain_{num_fd+1}"]["A"]) / len (fin_res[f"forgetdomain_{num_fd+1}"]["A"])
+        fin_res[f"forgetdomain_{num_fd+1}"]["F"] = sum(fin_res[f"forgetdomain_{num_fd+1}"]["F"]) / len (fin_res[f"forgetdomain_{num_fd+1}"]["F"])
+        data_tot.extend(
+            [
+                fin_res[f"forgetdomain_{num_fd+1}"]["H"],
+                fin_res[f"forgetdomain_{num_fd+1}"]["A"],
+                fin_res[f"forgetdomain_{num_fd+1}"]["F"]
+            ]
+        ) 
+
+    with open(exp_csv_filepath, mode="a", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow(data_tot)
+
+    
+
