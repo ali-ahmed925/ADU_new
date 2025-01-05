@@ -591,9 +591,15 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
         self.insert_layer = design_details["insert_layer"] - 1
         self.use_classtoken = design_details["use_classtoken"]
         # self.use_cross_attention = design_details["use_cross_attention"]
-        if i == self.insert_layer:
-            if not self.text_layer:
-                self.cross_attn = CrossAttention(d_model, n_head)
+        self.independent_cross_attention = design_details["independent_cross_attention"]
+        if self.independent_cross_attention :
+            if i <= self.insert_layer:
+                if not self.text_layer:
+                    self.cross_attn = CrossAttention(d_model, n_head)
+        else:
+            if i == self.insert_layer:
+                if not self.text_layer:
+                    self.cross_attn = CrossAttention(d_model, n_head)
 
     def cross_atention(self, q: torch.Tensor, k:torch.Tensor, v:torch.Tensor):
         self.attn_mask = self.attn_mask.to(dtype=q.dtype, device=k.device) if self.attn_mask is not None else None
@@ -624,12 +630,20 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
                     visual_context = vpt_share.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
                 # Add the learnable tokens of this layer with the input, by replacing the previous
                 # layer learnable tokens
-                if idx == self.insert_layer :
-                    if self.use_classtoken:
-                        kv = prefix[0,:,:].unsqueeze(0)
-                    else:   
-                        kv = prefix[1:,:,:]
-                    visual_context = self.cross_attention_promptgen(visual_context, kv)
+                if self.independent_cross_attention:
+                    if idx <= self.insert_layer :
+                        if self.use_classtoken:
+                            kv = prefix[0,:,:].unsqueeze(0)
+                        else:   
+                            kv = prefix[1:,:,:]
+                        visual_context = self.cross_attention_promptgen(visual_context, kv)
+                else:
+                    if idx == self.insert_layer :
+                        if self.use_classtoken:
+                            kv = prefix[0,:,:].unsqueeze(0)
+                        else:   
+                            kv = prefix[1:,:,:]
+                        visual_context = self.cross_attention_promptgen(visual_context, kv)
                 x = torch.cat([prefix, visual_context], dim=0)
             else:
                 # Appending the learnable tokens in different way

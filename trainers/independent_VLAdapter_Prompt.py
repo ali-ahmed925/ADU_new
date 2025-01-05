@@ -46,6 +46,7 @@ def load_clip_to_cpu(cfg):
                       "add_linear": cfg.ADD_LINEAR,
                       "use_classtoken": cfg.USE_CLASSTOKEN,
                       "use_cross_attention": cfg.USE_CROSSATTENTION,
+                      "independent_cross_attention": cfg.INDEPENDENT_CROSS_ATTENTION,
                       "independent_learnable_vision": cfg.INDEPENDENT_LEARNABLE_VISION,
                       "insert_layer": cfg.INSERT_LAYER_ATTN
                       }
