@@ -544,6 +544,11 @@ class CrossAttention(nn.Module):
         x = self.ffn(x) + x
         return x
 
+    # def cross_attention_promptgen(self, q: torch.Tensor, kv: torch.Tensor):
+    #     # self.attn_mask = self.attn_mask.to(dtype=q.dtype, device=q.device) if self.attn_mask is not None else None
+    #     self.cross_attn = self.cross_attn.to(dtype=q.dtype)
+    #     return self.cross_attn(q, kv)
+
 class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
     def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, add_prompt=False,
                  text_layer=False, i=0, design_details=None):
@@ -561,6 +566,7 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
         # For the first iteration i, we should not add the learnable parameters
         # as it is already been taken care of in the very start, for both text
         # and the visual branch
+        self.independent_learnable_vision = design_details["independent_learnable_vision"]
         self.text_layer = text_layer
         self.attn_mask = attn_mask
         if i != 0:
@@ -569,15 +575,20 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
                 if self.text_layer:
                     self.n_ctx_text = design_details["language_ctx"]  # hyperparameter
                     ctx_vectors = torch.empty(self.n_ctx_text, d_model)
+                    nn.init.normal_(ctx_vectors, std=0.02)
+                    self.VPT_shallow = nn.Parameter(ctx_vectors)
                 else:
                     self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
-                    ctx_vectors = torch.empty(self.n_ctx_visual, d_model)
+                    if self.independent_learnable_vision:
+                        ctx_vectors = torch.empty(self.n_ctx_visual, d_model)
+                        nn.init.normal_(ctx_vectors, std=0.02)
+                        self.VPT_shallow = nn.Parameter(ctx_vectors)
+                    else :
+                        pass
                 # Code snippet for per layer visual prompts
-                nn.init.normal_(ctx_vectors, std=0.02)
-                self.VPT_shallow = nn.Parameter(ctx_vectors)
         else:
             self.add_prompt = False
-        self.insert_layer = design_details["vision_depth"] - 1
+        self.insert_layer = design_details["insert_layer"] - 1
         self.use_classtoken = design_details["use_classtoken"]
         # self.use_cross_attention = design_details["use_cross_attention"]
         if i == self.insert_layer:
@@ -598,7 +609,7 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
         self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
-    def forward(self, x: torch.Tensor, idx: int):
+    def forward(self, x: torch.Tensor, idx: int, vpt_share: Union[torch.Tensor, NoneType] = None):
         # Will need to append the learnable tokens for this layer here
         # Check if flag was set for this layer or not
         if self.add_prompt:
@@ -607,7 +618,10 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
                 # Remove the outputs produced by learnable tokens of previous layer
                 prefix = x[0:x.shape[0] - self.n_ctx_visual, :, :]
                 # Create/configure learnable tokens of this layer
-                visual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
+                if self.independent_learnable_vision:
+                    visual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
+                else :
+                    visual_context = vpt_share.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
                 # Add the learnable tokens of this layer with the input, by replacing the previous
                 # layer learnable tokens
                 if idx == self.insert_layer :
@@ -979,6 +993,157 @@ class Transformer_Prompt(nn.Module):
                                              else ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, False,
                                                                               text_layer, i, design_details)
                                              for i in range(layers)])
+        self.independ_learnable_vision = design_details["independent_learnable_vision"]
+        if not self.independ_learnable_vision :
+            self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
+            ctx_vectors = torch.empty(self.n_ctx_visual, width)
+            nn.init.normal_(ctx_vectors, std=0.02)
+            self.VPT_shallow_share = nn.Parameter(ctx_vectors)
+        
+        self.current_trainer = current_trainer
+        self.n_ctx_visual = design_details["vision_ctx"]
+        # self.select_layer = design_details["insert_layer"]
+
+    def forward(self, x: torch.Tensor):
+        if "Local" in self.current_trainer:
+            for i in range(self.layers):
+                x, q, k, v = self.resblocks[i](x, i)
+            return x, q, k, v
+        else:
+            for i in range(self.layers):
+                if self.independ_learnable_vision:
+                    x = self.resblocks[i](x, i)
+                else :
+                    x = self.resblocks[i](x, i, self.VPT_shallow_share)
+            return x
+
+class _UNUSED_Transformer_Prompt_Multiple(nn.Module):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
+                 text_layer=False, design_details=None):
+        super().__init__()
+        self.width = width
+        self.layers = layers
+        self.text_layer = text_layer
+        # Implements respective encoder blocks for a given design choice
+        current_trainer = design_details['trainer']
+        
+        self.independent_cross_attention = design_details["independent_cross_attention"]
+        self.independent_learnable_vision = design_details["independent_learnable_vision"]
+        # self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
+        self.current_trainer = current_trainer
+        self.n_ctx_visual = design_details["vision_ctx"]
+        self.insert_layer = design_details["vision_depth"] - 1
+
+        if not self.text_layer:
+            if self.independent_cross_attention:
+                for i in range(design_details["vision_depth"]):
+                    if i == 0:
+                        self.CROSS_ATTN = nn.ParameterList([CrossAttention(self.width, heads)])
+                    else :
+                        self.CROSS_ATTN.append(CrossAttention(self.width, heads))
+
+            else:
+                self.CROSS_ATTN = nn.ParameterList([CrossAttention(self.width, heads)])
+
+            if self.independent_learnable_vision:
+                # for i in range(layers):
+                ctx_vectors = torch.empty(design_details["vision_depth"], self.n_ctx_visual, width)
+                nn.init.normal_(ctx_vectors, std=0.02)
+                self.VPT_Deep = nn.Parameter(ctx_vectors)
+                    # if i == 0:
+                    #     self.VPT_Deep = nn.ParameterList([nn.Parameter(ctx_vectors)])
+                    # else :
+                    #     self.VPT_Deep.append(nn.Parameter(ctx_vectors))
+
+            else :
+                # for i in range(self.insert_layer + 1):
+                ctx_vectors = torch.empty(self.n_ctx_visual, width)
+                nn.init.normal_(ctx_vectors, std=0.02)
+                #     if i == 0:
+                #         self.VPT_Deep = nn.ParameterList([nn.Parameter(ctx_vectors)])
+                #     else :
+                #         self.VPT_Deep.append(nn.Parameter(ctx_vectors))
+                self.VPT_Deep = nn.Parameter(ctx_vectors)
+        
+        if current_trainer == "IVLP_VL_Adapter_Prompt_Multiple":
+            # self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Prompt_Multiple(width, heads, attn_mask, True,
+            #                                                              text_layer, i,
+            #                                                              design_details) if prompts_needed > i
+            #                                  else ResidualAttentionBlock_IVLP_Prompt_Multiple(width, heads, attn_mask, False,
+            #                                                                   text_layer, i, design_details)
+            #                                  for i in range(layers)])
+            if self.text_layer :
+                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, True,
+                                                                         text_layer, i,
+                                                                         design_details) if prompts_needed > i
+                                             else ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, False,
+                                                                              text_layer, i, design_details)
+                                             for i in range(layers)])
+            else :
+                self.resblocks = nn.Sequential(
+                    *[ResidualAttentionBlock_IVLP_Prompt_Multiple(width, heads, attn_mask, True,
+                                                                            text_layer, i,
+                                                                            design_details)
+                                                                            for i in range(layers)
+                                                                            ]
+                )
+        self.layers = layers
+        # self.select_layer = design_details["insert_layer"]
+        
+    
+    # def freeze_VPT_Deep(self):
+    #     # for i in range(len(self.CROSS_ATTN)):
+    #     #     if i < self.insert_layer:
+    #     #         for param in self.CROSS_ATTN[i].parameters():
+    #     #             param.requires_grad = False
+    #             # for param in self.VPT_Deep[i].parameters():
+    #             #     param.requires_grad = False
+    #     for i in range(len(self.VPT_Deep)):
+    #         if i < self.insert_layer:
+    #             self.VPT_Deep[i].requires_grad = False
+
+
+
+    def forward(self, x: torch.Tensor):
+        if "Local" in self.current_trainer:
+            for i in range(self.layers):
+                x, q, k, v = self.resblocks[i](x, i)
+            return x, q, k, v
+        else:
+            if self.text_layer:
+                for i in range(self.layers):
+                    x = self.resblocks[i](x, i)
+                return x
+            else :
+                for i in range(self.layers):
+                    x = self.resblocks[i](x, i, self.VPT_Deep, self.CROSS_ATTN)
+                return x
+
+from utils.loss_fn import *   
+class Transformer_Prompt_Multiple(nn.Module):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
+                 text_layer=False, design_details=None):
+        super().__init__()
+        self.width = width
+        self.layers = layers
+        self.text_layer = text_layer
+        # Implements respective encoder blocks for a given design choice
+        current_trainer = design_details['trainer']
+        if current_trainer == "IVLP_VL_Adapter_Prompt_Multiple":
+            if not self.text_layer:
+                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Prompt_Multiple(width, heads, attn_mask, True,
+                                                                            text_layer, i,
+                                                                            design_details) if prompts_needed > i
+                                                else ResidualAttentionBlock_IVLP_Prompt_Multiple(width, heads, attn_mask, False,
+                                                                                text_layer, i, design_details)
+                                                for i in range(layers)])
+            else :
+                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, True,
+                                                                            text_layer, i,
+                                                                            design_details) if prompts_needed > i
+                                                else ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, False,
+                                                                                text_layer, i, design_details)
+                                                for i in range(layers)])
         
         self.current_trainer = current_trainer
         self.n_ctx_visual = design_details["vision_ctx"]
@@ -993,8 +1158,196 @@ class Transformer_Prompt(nn.Module):
             for i in range(self.layers):
                 x = self.resblocks[i](x, i)
             return x
+    
+class ResidualAttentionBlock_IVLP_Prompt_Multiple(nn.Module):
+    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, add_prompt=False,
+                 text_layer=False, i=0, design_details=None):
+        super().__init__()
 
-class Transformer_Prompt_SelectPatch(nn.Module):
+        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.ln_1 = LayerNorm(d_model)
+        self.mlp = nn.Sequential(OrderedDict([
+            ("c_fc", nn.Linear(d_model, d_model * 4)),
+            ("gelu", QuickGELU()),
+            ("c_proj", nn.Linear(d_model * 4, d_model))
+        ]))
+        self.ln_2 = LayerNorm(d_model)
+        # Only add learnable tokens if flag is set True
+        # For the first iteration i, we should not add the learnable parameters
+        # as it is already been taken care of in the very start, for both text
+        # and the visual branch
+        self.text_layer = text_layer
+        self.attn_mask = attn_mask
+        if i != 0:
+            self.add_prompt = add_prompt
+            if self.add_prompt:
+                if self.text_layer:
+                    self.n_ctx_text = design_details["language_ctx"]  # hyperparameter
+                    ctx_vectors = torch.empty(self.n_ctx_text, d_model)
+                else:
+                    self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
+                    ctx_vectors = torch.empty(self.n_ctx_visual, d_model)
+                # Code snippet for per layer visual prompts
+                nn.init.normal_(ctx_vectors, std=0.02)
+                self.VPT_shallow = nn.Parameter(ctx_vectors)
+        else:
+            self.add_prompt = False
+        self.insert_layer = design_details["vision_depth"] - 1
+        self.use_classtoken = design_details["use_classtoken"]
+        # self.use_cross_attention = design_details["use_cross_attention"]
+        if i <= self.insert_layer:
+            if not self.text_layer:
+                self.cross_attn = CrossAttention(d_model, n_head)
+
+    def cross_atention(self, q: torch.Tensor, k:torch.Tensor, v:torch.Tensor):
+        self.attn_mask = self.attn_mask.to(dtype=q.dtype, device=k.device) if self.attn_mask is not None else None
+        return self.cross_attn(query=q, key=k, value=v)[0]
+    
+    def cross_attention_promptgen(self, q: torch.Tensor, kv: torch.Tensor):
+        self.attn_mask = self.attn_mask.to(dtype=q.dtype, device=q.device) if self.attn_mask is not None else None
+        self.cross_attn = self.cross_attn.to(dtype=q.dtype)
+        return self.cross_attn(q, kv)
+        # pass
+
+    def attention(self, x: torch.Tensor):
+        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
+        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
+
+    def forward(self, x: torch.Tensor, idx: int):
+        # Will need to append the learnable tokens for this layer here
+        # Check if flag was set for this layer or not
+        if self.add_prompt:
+            # Also see if this is textual transformer layer or not
+            if not self.text_layer:
+                # Remove the outputs produced by learnable tokens of previous layer
+                prefix = x[0:x.shape[0] - self.n_ctx_visual, :, :]
+                # Create/configure learnable tokens of this layer
+                visual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
+                # Add the learnable tokens of this layer with the input, by replacing the previous
+                # layer learnable tokens
+                if idx <= self.insert_layer :
+                    if self.use_classtoken:
+                        kv = prefix[0,:,:].unsqueeze(0)
+                    else:   
+                        kv = prefix[1:,:,:]
+                    visual_context = self.cross_attention_promptgen(visual_context, kv)
+                x = torch.cat([prefix, visual_context], dim=0)
+            else:
+                # Appending the learnable tokens in different way
+                # x -> [77, NCLS, DIM]
+                # First remove the learnable tokens from previous layer
+                prefix = x[:1, :, :]
+                suffix = x[1 + self.n_ctx_text:, :, :]
+                # Create/configure learnable tokens of this layer
+                textual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
+                # Add the learnable tokens of this layer with the input, replaced by previous
+                # layer learnable tokens
+                x = torch.cat([prefix, textual_context, suffix], dim=0)                
+        x = x + self.attention(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
+        return x
+                
+
+class _UNUSED_ResidualAttentionBlock_IVLP_Prompt_Multiple(nn.Module):
+    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, add_prompt=False,
+                 text_layer=False, i=0, design_details=None):
+        super().__init__()
+
+        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.ln_1 = LayerNorm(d_model)
+        self.mlp = nn.Sequential(OrderedDict([
+            ("c_fc", nn.Linear(d_model, d_model * 4)),
+            ("gelu", QuickGELU()),
+            ("c_proj", nn.Linear(d_model * 4, d_model))
+        ]))
+        self.ln_2 = LayerNorm(d_model)
+        # Only add learnable tokens if flag is set True
+        # For the first iteration i, we should not add the learnable parameters
+        # as it is already been taken care of in the very start, for both text
+        # and the visual branch
+        self.text_layer = text_layer
+        self.attn_mask = attn_mask
+        self.n_ctx_visual = design_details["vision_ctx"]
+        # if i != 0:
+        #     self.add_prompt = add_prompt
+        #     if self.add_prompt:
+        #         if self.text_layer:
+        #             self.n_ctx_text = design_details["language_ctx"]  # hyperparameter
+        #             ctx_vectors = torch.empty(self.n_ctx_text, d_model)
+        #         else:
+        #             self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
+        #             ctx_vectors = torch.empty(self.n_ctx_visual, d_model)
+        #         # Code snippet for per layer visual prompts
+        #         nn.init.normal_(ctx_vectors, std=0.02)
+        #         self.VPT_shallow = nn.Parameter(ctx_vectors)
+        # else:
+        #     self.add_prompt = False
+        self.independent_cross_attention = design_details["independent_cross_attention"]
+        self.independent_learnable_vision = design_details["independent_learnable_vision"]
+        self.insert_layer = design_details["vision_depth"] - 1
+        self.use_classtoken = design_details["use_classtoken"]
+        # self.use_cross_attention = design_details["use_cross_attention"]
+        # if i == self.insert_layer:
+        #     if not self.text_layer:
+        #         self.cross_attn = CrossAttention(d_model, n_head)
+
+    # def cross_atention(self, q: torch.Tensor, k:torch.Tensor, v:torch.Tensor):
+    #     self.attn_mask = self.attn_mask.to(dtype=q.dtype, device=k.device) if self.attn_mask is not None else None
+    #     return self.cross_attn(query=q, key=k, value=v)[0]
+    
+    # def cross_attention_promptgen(self, q: torch.Tensor, kv: torch.Tensor):
+    #     self.attn_mask = self.attn_mask.to(dtype=q.dtype, device=q.device) if self.attn_mask is not None else None
+    #     self.cross_attn = self.cross_attn.to(dtype=q.dtype)
+    #     return self.cross_attn(q, kv)
+    #     # pass
+
+    def attention(self, x: torch.Tensor):
+        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
+        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
+
+    def forward(self, x: torch.Tensor, idx: int, vpt_deep, cross_attn):
+        # Will need to append the learnable tokens for this layer here
+        # Check if flag was set for this layer or not
+        # Also see if this is textual transformer layer or not
+        if not self.text_layer:
+            if idx <= self.insert_layer:
+                if self.independent_learnable_vision:
+                    visual_context = vpt_deep[idx].expand(x.shape[1], -1, -1).permute(1, 0, 2).to(dtype=x.dtype)
+                else:
+                    visual_context = vpt_deep.expand(x.shape[1], -1, -1).permute(1, 0, 2).to(dtype=x.dtype)
+                prefix = x[0:x.shape[0] - self.n_ctx_visual, :, :]
+                # elif idx >= self.insert_layer:
+                if self.use_classtoken:
+                    kv = prefix[0,:,:].unsqueeze(0)
+                else:   
+                    kv = prefix[1:,:,:]
+                if self. independent_cross_attention:
+                    cross_attn = cross_attn.to(dtype=kv.dtype)
+                    visual_context = cross_attn[idx](visual_context, kv)
+                else :
+                    cross_attn = cross_attn.to(dtype=kv.dtype)
+                    visual_context = cross_attn[0](visual_context, kv)
+                
+                x = torch.cat([prefix, visual_context], dim=0)
+            # else:
+            else :
+                pass
+            
+            #     # Appending the learnable tokens in different way
+            #     # x -> [77, NCLS, DIM]
+            #     # First remove the learnable tokens from previous layer
+            #     prefix = x[:1, :, :]
+            #     suffix = x[1 + self.n_ctx_text:, :, :]
+            #     # Create/configure learnable tokens of this layer
+            #     textual_context = self.VPT_shallow.expand(x.shape[1], -1, -1).permute(1, 0, 2).half()
+            #     # Add the learnable tokens of this layer with the input, replaced by previous
+            #     # layer learnable tokens
+            #     x = torch.cat([prefix, textual_context, suffix], dim=0)                
+        x = x + self.attention(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
+        return x
+
+class _UNUSED_Transformer_Prompt_SelectPatch(nn.Module):
     def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
                  text_layer=False, design_details=None):
         super().__init__()
@@ -1055,7 +1408,7 @@ class Transformer_Prompt_SelectPatch(nn.Module):
 
 
 # from utils.loss_fn import *   
-class Transformer_SelectPatch(nn.Module):
+class _UNUSED_Transformer_SelectPatch(nn.Module):
     def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, prompts_needed=0,
                  text_layer=False, design_details=None):
         super().__init__()
@@ -1384,6 +1737,69 @@ class VisionTransformer_Prompt(nn.Module):
         # of transformer block or not:
         self.prompt_till_layer_visual = design_details["vision_depth"]
         self.transformer = Transformer_Prompt(width, layers, heads, prompts_needed=self.prompt_till_layer_visual,
+                                       design_details=design_details)
+
+        self.ln_post = LayerNorm(width)
+        self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
+
+    def forward(self, x: torch.Tensor):
+        x = self.conv1(x)  # shape = [*, width, grid, grid]
+        x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
+        x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
+        x = torch.cat(
+            [self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype,
+                                                            device=x.device),
+             x], dim=1)  # shape = [*, grid ** 2 + 1, width]
+        x = x + self.positional_embedding.to(x.dtype)
+
+        # After positional embeddings, we will attach prompts with the model, remember only those
+        # are trainable parameters here in whole image encoder.
+        if self.VPT_shallow:
+            visual_ctx = self.VPT.expand(x.shape[0], -1, -1).half()
+            x = torch.cat([x, visual_ctx], dim=1)
+        else:
+            assert self.prompt_till_layer_visual == 0
+
+        # Normal code as before
+        x = self.ln_pre(x)
+
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = self.transformer(x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+
+        x = self.ln_post(x[:, 0, :])
+
+        if self.proj is not None:
+            x = x @ self.proj
+
+        return x
+
+class VisionTransformer_Prompt_Multiple(nn.Module):
+    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int,
+                 output_dim: int, design_details):
+        super().__init__()
+        self.input_resolution = input_resolution
+        self.output_dim = output_dim
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=width, kernel_size=patch_size, stride=patch_size, bias=False)
+        if design_details["vision_depth"] == 0:
+            self.VPT_shallow = False
+        else:
+            self.VPT_shallow = True
+        if self.VPT_shallow:
+            # Add visual prompt tokens here
+            n_ctx = design_details["vision_ctx"]  # hyperparameter
+            ctx_vectors = torch.empty(n_ctx, width)
+            nn.init.normal_(ctx_vectors, std=0.02)
+            self.VPT = nn.Parameter(ctx_vectors)
+            # self.VPT.half()
+        scale = width ** -0.5
+        self.class_embedding = nn.Parameter(scale * torch.randn(width))
+        self.positional_embedding = nn.Parameter(scale * torch.randn((input_resolution // patch_size) ** 2 + 1, width))
+        self.ln_pre = LayerNorm(width)
+        # hyper-parameter if need to add prompt embeddings inside to the input
+        # of transformer block or not:
+        self.prompt_till_layer_visual = design_details["vision_depth"]
+        self.transformer = Transformer_Prompt_Multiple(width, layers, heads, prompts_needed=self.prompt_till_layer_visual,
                                        design_details=design_details)
 
         self.ln_post = LayerNorm(width)
@@ -1918,6 +2334,16 @@ class CLIP(nn.Module):
                     output_dim=embed_dim,
                     design_details=design_details
                 ) 
+            elif trainer == "IVLP_VL_Adapter_Prompt_Multiple":
+                self.visual= VisionTransformer_Prompt_Multiple(
+                    input_resolution=image_resolution,
+                    patch_size=vision_patch_size,
+                    width=vision_width,
+                    layers=vision_layers,
+                    heads=vision_heads,
+                    output_dim=embed_dim,
+                    design_details=design_details
+                ) 
             else:
                 self.visual = VisionTransformer(
                     input_resolution=image_resolution,
@@ -1963,6 +2389,16 @@ class CLIP(nn.Module):
             )
         elif trainer == "IVLP_VL_Adapter_Prompt_SelectPatch":
             self.transformer = Transformer_Prompt_SelectPatch(
+                width=transformer_width,
+                layers=transformer_layers,
+                heads=transformer_heads,
+                attn_mask=self.build_attention_mask(),
+                prompts_needed=prompt_till_layer_text,
+                text_layer=True,
+                design_details=design_details
+            )
+        elif trainer == "IVLP_VL_Adapter_Prompt_Multiple":
+            self.transformer = Transformer_Prompt_Multiple(
                 width=transformer_width,
                 layers=transformer_layers,
                 heads=transformer_heads,

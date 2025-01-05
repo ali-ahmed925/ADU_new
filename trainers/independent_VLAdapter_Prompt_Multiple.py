@@ -39,15 +39,13 @@ def load_clip_to_cpu(cfg):
 
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
-    design_details = {"trainer": 'IVLP_VL_Adapter_Prompt',
+    design_details = {"trainer": 'IVLP_VL_Adapter_Prompt_Multiple',
                       "vision_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION,
                       "language_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT, "vision_ctx": cfg.TRAINER.IVLP.N_CTX_VISION,
                       "language_ctx": cfg.TRAINER.IVLP.N_CTX_TEXT,
-                      "add_linear": cfg.ADD_LINEAR,
                       "use_classtoken": cfg.USE_CLASSTOKEN,
-                      "use_cross_attention": cfg.USE_CROSSATTENTION,
+                      "independent_cross_attention": cfg.INDEPENDENT_CROSS_ATTENTION,
                       "independent_learnable_vision": cfg.INDEPENDENT_LEARNABLE_VISION,
-                      "insert_layer": cfg.INSERT_LAYER_ATTN
                       }
     model = clip.build_model(state_dict or model.state_dict(), design_details)
 
@@ -180,18 +178,12 @@ class CustomCLIP(nn.Module):
         if cfg.USE_DOMAIN_CLASIFIER_LOSS:
             if cfg.DOMAIN_CLASS_DIVIDED:
                 if cfg.IS_DOMAIN_DIVIDED:
-                    if cfg.DATASET.NAME == "Office31DF":
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3*len(classnames))
-                    else:
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
                 else :
                     self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
             else :
                 if cfg.IS_DOMAIN_DIVIDED:
-                    if cfg.DATASET.NAME == "Office31DF":
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3)
-                    else :
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
+                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
                 else :
                     self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
             self.domain_classifier.to(self.dtype)
@@ -236,7 +228,7 @@ class Adapter(nn.Module):
         return x.type(self.dtype)
 
 @TRAINER_REGISTRY.register()
-class IVLP_VL_Adapter_Prompt(TrainerDF):
+class IVLP_VL_Adapter_Prompt_Multiple(TrainerDF):
         
     def check_cfg(self, cfg):
         assert cfg.TRAINER.IVLP.PREC in ["fp16", "fp32", "amp"]
@@ -262,6 +254,7 @@ class IVLP_VL_Adapter_Prompt(TrainerDF):
             if name_to_update not in name:
                 # Make sure that VPT prompts are updated
                 if "VPT" in name:
+                    # if "text_encoder" in name:
                     param.requires_grad_(True)
                 elif "adapter" in name:
                     param.requires_grad_(True)
@@ -269,12 +262,17 @@ class IVLP_VL_Adapter_Prompt(TrainerDF):
                     param.requires_grad_(True)
                 elif "cross_attn" in name:
                     param.requires_grad_(True)
-                elif "added_linear" in name:
-                    param.requires_grad_(True)
+                # elif "CROSS_ATTN" in name:
+                #     param.requires_grad_(True)
+                # elif "added_linear" in name:
+                #     param.requires_grad_(True)
+                # elif "VPT_Deep" in name:
+                #     param.requires_grad_(True)
                 else:
                     param.requires_grad_(False)
 
         # Double check
+        # self.model.image_encoder.transformer.freeze_VPT_Deep()
         enabled = set()
         for name, param in self.model.named_parameters():
             if param.requires_grad:
@@ -332,3 +330,16 @@ class IVLP_VL_Adapter_Prompt(TrainerDF):
             print("Loading weights to {} " 'from "{}" (epoch = {})'.format(name, model_path, epoch))
             # set strict=False
             self._models[name].load_state_dict(state_dict, strict=False)
+    
+    # def model_backward_and_update(self, loss, names=None):
+    #     self.model_zero_grad(names)
+    #     self.model_backward(loss)
+    #     # for i in range(9):
+    #     #     print(f"{i+1}: ", self.model.image_encoder.transformer.VPT_Deep[i].grad)
+    #     # # 
+    #     # # print(self.model.image_encoder.transformer.CROSS_ATTN.8.ffn.net.2.weight.grad)
+    #     # a = self.model.image_encoder.transformer.CROSS_ATTN[1].ffn.net[2].weight.grad
+    #     # b = self.model.image_encoder.transformer.CROSS_ATTN[8].ffn.net[2].weight.grad
+    #     # print(a)
+    #     # print(b)
+    #     self.model_update(names)

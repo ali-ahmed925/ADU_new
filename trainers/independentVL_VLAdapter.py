@@ -174,12 +174,18 @@ class CustomCLIP(nn.Module):
         if cfg.USE_DOMAIN_CLASIFIER_LOSS:
             if cfg.DOMAIN_CLASS_DIVIDED:
                 if cfg.IS_DOMAIN_DIVIDED:
-                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
+                    if cfg.DATASET.NAME == "Office31DF":
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3*len(classnames))
+                    else:
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
                 else :
                     self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
             else :
                 if cfg.IS_DOMAIN_DIVIDED:
-                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
+                    if cfg.DATASET.NAME == "Office31DF":
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3)
+                    else :
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
                 else :
                     self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
             self.domain_classifier.to(self.dtype)

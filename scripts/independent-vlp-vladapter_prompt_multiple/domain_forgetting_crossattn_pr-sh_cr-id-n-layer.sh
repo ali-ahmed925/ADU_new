@@ -4,7 +4,7 @@ export CUDA_VISIBLE_DEVICES=$1
 
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
-TRAINER=IVLP_VL_Adapter_Prompt
+TRAINER=IVLP_VL_Adapter_Prompt_Multiple
 
 DATASET=$2
 SEED=$3
@@ -45,8 +45,8 @@ if [ "$USE_NEAREST_NEIGHBOR_LOSS" = "true" ]; then
     USE_NEAREST_NEIGHBOR_LOSS_FLAG="--use_nearest_neighbor_loss"
 fi
 
-DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}/seed${SEED}/${TODAY}
-CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}_seed${SEED}.csv
+DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/BEFORE-ALL${DEPTH_VISION}Layer-INSERT_CROSS_ATTENTION-InD_PT-Share_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}/seed${SEED}/${TODAY}
+CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_BEFORE-ALL${DEPTH_VISION}Layer-INSERT_CROSS_ATTENTION-InD_PT-Share_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}_seed${SEED}.csv
 
 if [ -d "$DIR" ]; then
     echo "Results are available in ${DIR}. Resuming..."
@@ -78,5 +78,7 @@ else
     TRAINER.IVLP.N_CTX_VISION ${NCTX} \
     TRAINER.IVLP.PROMPT_DEPTH_TEXT ${DEPTH_TEXT} \
     TRAINER.IVLP.N_CTX_TEXT ${NCTX} \
-    USE_CROSSATTENTION True 
+    USE_CROSSATTENTION True \
+    INDEPENDENT_CROSS_ATTENTION True \
+    INDEPENDENT_LEARNABLE_VISION False 
 fi
