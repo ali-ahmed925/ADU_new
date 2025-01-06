@@ -19,7 +19,8 @@ IS_DOMAIN_DIVIDED=${10}
 SHOTS=${11}
 EXPNAME=${12}
 USE_CROSSATTENTION=${13}
-SUBEXPNAME=DC-${USE_DOMAIN_CLS_LOSS}_NN-${USE_NEAREST_NEIGHBOR_LOSS}_DIV-${IS_DOMAIN_DIVIDED}_InstPG${USE_CROSSATTENTION}
+DATASETSEED=${14}
+SUBEXPNAME=DC-${USE_DOMAIN_CLS_LOSS}_NN-${USE_NEAREST_NEIGHBOR_LOSS}_DIV-${IS_DOMAIN_DIVIDED}_InstPG-${USE_CROSSATTENTION}
 
 
 
@@ -63,7 +64,7 @@ python train_loop.py \
     --output-dir ${DIR} \
     --num_shots ${SHOTS} \
     --dataset_name ${DATASET} \
-    --dataset_seed 1 \
+    --dataset_seed ${DATASETSEED} \
     --experiment_name ${EXPNAME} \
     --sub_experiment_name ${SUBEXPNAME} \
     ${IS_DOMAIN_DIVIDED_FLAG} \

@@ -44,20 +44,9 @@ fi
 DIR=/nas/data/gotoyuta/Result_Domain_Forgetting_Loop/${DATASET}/${TRAINER}/SHOTS${SHOTS}/${CFG}/nctx${NCTX}_text-depth${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}
 # CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}_seed${SEED}.csv
 
-if [ -d "$DIR" ]; then
-    echo "Results are available in ${DIR}. Resuming..."
-    # python train.py \
-    # --root ${DATA} \
-    # --seed ${SEED} \
-    # --trainer ${TRAINER} \
-    # --dataset-config-file configs/datasets/${DATASET}.yaml \
-    # --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
-    # --output-dir ${DIR} \
-    # DATASET.NUM_SHOTS ${SHOTS} \
-    # DATASET.SUBSAMPLE_CLASSES base
-else
-    echo "Run this job and save the output to ${DIR}"
-    python train_loop.py \
+
+echo "Run this job and save the output to ${DIR}"
+python train_loop.py \
     --root ${DATA} \
     --seed ${SEED} \
     --trainer ${TRAINER} \
@@ -79,4 +68,4 @@ else
     TRAINER.IVLP.N_CTX_TEXT ${NCTX} \
     USE_CROSSATTENTION True \
     INSERT_LAYER_ATTN ${DEPTH_VISION}
-fi
+
