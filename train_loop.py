@@ -519,8 +519,28 @@ if __name__ == "__main__":
     base_output_dir = args.output_dir + "/" + expname + "/" + subexpname
     dataset_seed = args.dataset_seed
 
+    if args.dataset_name == "office_home_df":
+        seed_list = [1, 6, 7]
+
+    elif args.dataset_name == "domainnet_mini_df":
+        seed_list = [1, 5, 6]
+    elif args.dataset_name == "visda17_df":
+        # dataset seed = 6
+        seed_list = [1, 2, 3, 4, 5, 6, 7, 8 ,9 ,10, 11]
+    elif args.dataset_name == "pacs_df":
+        seed_list = [1, 2, 3, 4, 5, 6]
+        pass
+    seed_list = [1, 6, 7]
+    res_seed_str = ""
+    for i, s in enumerate(seed_list) :
+        if i == len(seed_list) - 1:
+            res_seed_str += str(s)
+        else:
+            res_seed_str += str(s) + "-"
+
+
     exp_csv_filedir = args.output_dir + "/" + expname
-    exp_csv_filepath = exp_csv_filedir + f"/results_tot_datasetseed{dataset_seed}.csv"
+    exp_csv_filepath = exp_csv_filedir + f"/results_aveseed-{res_seed_str}_datasetseed{dataset_seed}.csv"
     if not osp.exists(exp_csv_filedir):
         os.makedirs(exp_csv_filedir)
 
@@ -528,12 +548,12 @@ if __name__ == "__main__":
         create_csv_file(exp_csv_filepath, len(base_dict))
     else :
         pass
-
+    
+    
 
     results_dict = {}
-    seed_list = []
-    for seed in [1, 2, 3]:
-        seed_list.append(seed)
+    for seed in seed_list:
+        # seed_list.append(seed)
         exp_csv_filepath_seedwise = exp_csv_filedir + "/" + f"results_seed{seed}_datasetseed{dataset_seed}.csv"
         if not osp.exists(exp_csv_filepath_seedwise):
             create_csv_file(exp_csv_filepath_seedwise, len(base_dict))
