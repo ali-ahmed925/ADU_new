@@ -24,7 +24,7 @@ class VisDA17DF(DatasetBase):
     domains = ["synthetic", "real"]
 
     def __init__(self, cfg):
-        root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
+        root = osp.abspath(osp.expanduser("/home/gotoyuta/lab/Dataset"))
         self.dataset_dir = osp.join(root, self.dataset_dir)
 
         # self.check_input_domains(
@@ -36,7 +36,7 @@ class VisDA17DF(DatasetBase):
         # train_u = self._read_data(input_domains)
         train_x, test = self._read_data(input_domains)
         num_shots = cfg.DATASET.NUM_SHOTS  # 使用する数ショット数を設定
-        train_x = self.generate_fewshot_dataset(train_x, num_shots=num_shots, repeat=True, seed=cfg.SEED)
+        train_x = self.generate_fewshot_dataset(train_x, num_shots=num_shots, repeat=True, seed=cfg.DATASET.SEED)
 
         super().__init__(train_x=train_x, test=test)
     def generate_fewshot_dataset(self, *data_sources, num_shots=-1, repeat=False, seed=0):
