@@ -19,6 +19,7 @@ IS_DOMAIN_DIVIDED=${10}
 SHOTS=${11}
 EXPNAME=${12}
 SUBEXPNAME=${13}
+DATASETSEED=${14}
 
 
 # フラグでCLIオプションを切り替え
@@ -56,7 +57,7 @@ python train_loop.py \
     --output-dir ${DIR} \
     --num_shots ${SHOTS} \
     --dataset_name ${DATASET} \
-    --dataset_seed 1 \
+    --dataset_seed ${DATASETSEED} \
     --experiment_name ${EXPNAME} \
     --sub_experiment_name ${SUBEXPNAME} \
     ${IS_DOMAIN_DIVIDED_FLAG} \
