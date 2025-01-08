@@ -14,7 +14,7 @@ conda activate domain-forgetting
 
 # Install torch (requires version >= 1.8.1) and torchvision
 # Please refer to https://pytorch.org/ if you need a different cuda version
-pip install torch==1.9.0+cu111 torchvision==0.10.0+cu111 torchaudio==0.9.0 -f https://download.pytorch.org/whl/torch_stable.html
+pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 --index-url https://download.pytorch.org/whl/cu124
 ```
 
 * Install dassl library.
@@ -33,10 +33,10 @@ python setup.py develop
 cd ..
 ```
 
-* Clone PromptSRC code repository and install requirements
+* Clone Domain-Forgetting code repository and install requirements
 ```bash
-# Clone PromptSRC code base
-git clone path
+# Clone Domain-Forgetting code base
+git clone https://github.com/510yuta/Domain-Forgetting.git
 
 cd Domain-Forgetting/
 # Install requirements
