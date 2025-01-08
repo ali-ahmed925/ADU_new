@@ -2,15 +2,15 @@
 
 ### Acknowledgement: This readme file for installing datasets is modified from [MaPLe's](https://github.com/muzairkhattak/multimodal-prompt-learning) official repository.
 
-This codebase is tested on Ubuntu 20.04.2 LTS with python 3.8. Follow the below steps to create environment and install dependencies.
+This codebase is tested on Ubuntu 22.04.2 LTS with python 3.10. Follow the below steps to create environment and install dependencies.
 
 * Setup conda environment (recommended).
 ```bash
 # Create a conda environment
-conda create -y -n promptsrc python=3.8
+conda create -y -n domain-forgetting python=3.10
 
 # Activate the environment
-conda activate promptsrc
+conda activate domain-forgetting
 
 # Install torch (requires version >= 1.8.1) and torchvision
 # Please refer to https://pytorch.org/ if you need a different cuda version
@@ -36,9 +36,9 @@ cd ..
 * Clone PromptSRC code repository and install requirements
 ```bash
 # Clone PromptSRC code base
-git clone https://github.com/muzairkhattak/PromptSRC.git
+git clone path
 
-cd PromptSRC/
+cd Domain-Forgetting/
 # Install requirements
 
 pip install -r requirements.txt
