@@ -67,7 +67,7 @@ class DomainNetMiniDF(DatasetBase):
         val = self._read_data(test_domains, split="test")
         test = self._read_data(test_domains, split="test")
         num_shots = cfg.DATASET.NUM_SHOTS  # 使用する数ショット数を設定
-        train_x = self.generate_fewshot_dataset(train_x, num_shots=num_shots, repeat=True, seed=cfg.SEED)
+        train_x = self.generate_fewshot_dataset(train_x, num_shots=num_shots, repeat=True, seed=cfg.DATASET.SEED)
         super().__init__(train_x=train_x, val=val, test=test)
     
     def generate_fewshot_dataset(self, *data_sources, num_shots=-1, repeat=False, seed=0):

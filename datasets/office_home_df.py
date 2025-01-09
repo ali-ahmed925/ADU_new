@@ -47,7 +47,7 @@ class OfficeHomeDF(DatasetBase):
             )
         
         num_shots = cfg.DATASET.NUM_SHOTS  # 使用する数ショット数を設定
-        train = self.generate_fewshot_dataset(train, num_shots=num_shots, repeat=True, seed=cfg.SEED)
+        train = self.generate_fewshot_dataset(train, num_shots=num_shots, repeat=True, seed=cfg.DATASET.SEED)
 
         for domain in test_domains:
             test += read_data(

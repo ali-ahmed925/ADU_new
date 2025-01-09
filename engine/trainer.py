@@ -172,6 +172,23 @@ class TrainerDF(SimpleTrainer):
 
             end = time.time()
     
+    # def train(self, start_epoch, max_epoch):
+    #     """Generic training loops."""
+    #     self.start_epoch = start_epoch
+    #     self.max_epoch = max_epoch
+
+    #     self.before_train()
+    #     for self.epoch in range(self.start_epoch, self.max_epoch):
+    #         self.before_epoch()
+    #         self.run_epoch()
+    #         self.after_epoch()
+    #     self.after_train()
+    
+    def train_loop(self):
+        # def train(self):
+        super().train()
+        return self.metrics_dict
+    
     def forward_backward(self, batch):
         image, label, domain = self.parse_batch_train(batch)
         
@@ -509,6 +526,15 @@ class TrainerDF(SimpleTrainer):
                     print("==================domain DC accuracy tot==================")
                     print(f"domain acc : {acc:.5f}")
             print("===================================================")
+            metrics_A = eval_dict[f"correct_prv"] / eval_dict[f"total_prv"]
+            metrics_F = 1 - eval_dict[f"correct_del"] / eval_dict[f"total_del"]
+            metrics_H = 2 * metrics_A * metrics_F / (metrics_A + metrics_F)
+
+            self.metrics_dict = {
+                "A" : 100 * metrics_A,
+                "F" : 100 * metrics_F,
+                "H" : 100 * metrics_H 
+            }
 
 
         for k, v in results.items():

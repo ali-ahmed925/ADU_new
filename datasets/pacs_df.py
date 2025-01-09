@@ -56,7 +56,7 @@ class PACSDF(DatasetBase):
         val = self._read_data(train_domains, "crossval")
         test = self._read_data(test_domains, "test")
         num_shots = cfg.DATASET.NUM_SHOTS  # 使用する数ショット数を設定
-        train = self.generate_fewshot_dataset(train, num_shots=num_shots, repeat=True, seed=cfg.SEED)
+        train = self.generate_fewshot_dataset(train, num_shots=num_shots, repeat=True, seed=cfg.DATASET.SEED)
         super().__init__(train_x=train, val=val, test=test)
 
     def generate_fewshot_dataset(self, *data_sources, num_shots=-1, repeat=False, seed=0):
