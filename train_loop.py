@@ -523,14 +523,17 @@ if __name__ == "__main__":
         seed_list = [1, 6, 7]
 
     elif args.dataset_name == "domainnet_mini_df":
-        seed_list = [1, 5, 6]
+        #seed_list = [1, 5, 6]
+        seed_list = [1, 6, 7]
     elif args.dataset_name == "visda17_df":
         # dataset seed = 6
-        seed_list = [1, 2, 3, 4, 5, 6, 7, 8 ,9 ,10, 11]
+        seed_list = [2, 3, 4, 5, 8 ,9 ,10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,28, 29, 30]
     elif args.dataset_name == "pacs_df":
         seed_list = [1, 2, 3, 4, 5, 6]
         pass
-    seed_list = [1, 6, 7]
+    elif args.dataset_name == "office31_df":
+        seed_list = [1, 2, 3, 4, 5, 6]
+        pass
     res_seed_str = ""
     for i, s in enumerate(seed_list) :
         if i == len(seed_list) - 1:
