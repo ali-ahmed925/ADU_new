@@ -47,6 +47,7 @@ CUSTOM_TEMPLATES = {
     "VLCSDF": "a photo of a {}",
     "Office31DF": "a photo of a {}",
     "VisDA17DF": "a photo of a {}",
+    "ImageNetDF": "a photo of a {}"
 }
 
 
