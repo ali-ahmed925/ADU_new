@@ -53,6 +53,7 @@ CUSTOM_TEMPLATES = {
     "DomainNetMiniDF": "a photo of a {}",
     "VLCSDF": "a photo of a {}",
     "Office31DF": "a photo of a {}",
+    "ImageNetDF": "a photo of a {}"
 }
 
 def load_clip_to_cpu_expert(cfg):
@@ -106,6 +107,9 @@ class TrainerDF(SimpleTrainer):
         elif cfg.DATASET.NAME == "VisDA17DF":
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = ["synthetic", "real"]
+        elif cfg.DATASET.NAME == "ImageNetDF":
+            self.del_domain_list = cfg.DATASET.FORGETDOMAINS
+            self.domain_list = ["real", "sketch"]
             # self.classnames = [
             #     "dog", "elephant", "giraffe", "guitar", "horse", "house", "person"
             # ]
@@ -297,9 +301,9 @@ class TrainerDF(SimpleTrainer):
         label = batch["label"]
         domain = batch["domain"]
         
-        input = input.to(self.device)
-        label = label.to(self.device)
-        domain = domain.to(self.device)
+        input = input.to(dtype=input.dtype, device=self.device)
+        label = label.to(dtype=label.dtype, device=self.device)
+        domain = domain.to(dtype=domain.dtype, device=self.device)
         return input, label, domain
 
     def parse_batch_test(self, batch):
@@ -307,9 +311,9 @@ class TrainerDF(SimpleTrainer):
         label = batch["label"]
         domain = batch["domain"]
 
-        input = input.to(self.device)
-        label = label.to(self.device)
-        domain = domain.to(self.device)
+        input = input.to(dtype=input.dtype, device=self.device)
+        label = label.to(dtype=label.dtype, device=self.device)
+        domain = domain.to(dtype=domain.dtype, device=self.device)
 
         return input, label, domain
     
