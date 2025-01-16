@@ -30,6 +30,7 @@ import datasets.domainnet_mini_df
 import datasets.vlcs_df
 import datasets.office31_df
 import datasets.visda17_df
+import datasets.imagenet_df
 
 import trainers.coop
 import trainers.cocoop
@@ -338,6 +339,8 @@ def get_loop_prepare(datasetname: str)->Tuple[List[str], Dict]:
 
     elif datasetname == "visda17_df":
         domain_list = ["synthetic", "real"]
+    elif datasetname == "imagenet_df":
+        domain_list = ["real", "sketch"]
     else :
         pass # assert
     
@@ -534,6 +537,8 @@ if __name__ == "__main__":
     elif args.dataset_name == "office31_df":
         seed_list = [1, 2, 3, 4, 5, 6]
         pass
+    elif args.dataset_name == "imagenet_df":
+        seed_list = [1, 2, 3]
     res_seed_str = ""
     for i, s in enumerate(seed_list) :
         if i == len(seed_list) - 1:
@@ -551,7 +556,6 @@ if __name__ == "__main__":
         create_csv_file(exp_csv_filepath, len(base_dict))
     else :
         pass
-    
     
 
     results_dict = {}
