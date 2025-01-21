@@ -180,6 +180,9 @@ def extend_cfg(cfg, args):
     cfg.USE_CLASSTOKEN = False
     cfg.USE_CROSSATTENTION = True
 
+    cfg.USE_VISION_ADAPTER = True
+    cfg.USE_TEXT_ADAPTER = True
+
     cfg.INDEPENDENT_CROSS_ATTENTION = False
     cfg.INDEPENDENT_LEARNABLE_VISION = True
 
