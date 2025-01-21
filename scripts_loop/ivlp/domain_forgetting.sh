@@ -4,7 +4,7 @@ export CUDA_VISIBLE_DEVICES=$1
 
 # custom config
 DATA="/nas/data/gotoyuta/Dataset/"
-TRAINER=IVLP_VL_Adapter_Prompt
+TRAINER=IVLP
 
 DATASET=$2
 SEED=$3
@@ -13,24 +13,19 @@ CFG=$4 # vit_b16_ep50
 NCTX=$5
 DEPTH_VISION=$6
 DEPTH_TEXT=$7
+
 USE_DOMAIN_CLS_LOSS=${8}
 USE_NEAREST_NEIGHBOR_LOSS=${9}
 IS_DOMAIN_DIVIDED=${10}
 SHOTS=${11}
 EXPNAME=${12}
-USE_CROSSATTENTION=${13}
+SUBEXPNAME=${13}
 DATASETSEED=${14}
-USE_VISION_ADAPTER=${15}
-USE_TEXT_ADAPTER=${16}
-SUBEXPNAME=DC-${USE_DOMAIN_CLS_LOSS}_NN-${USE_NEAREST_NEIGHBOR_LOSS}_DIV-${IS_DOMAIN_DIVIDED}_InstPG-${USE_CROSSATTENTION}
-
-
 
 # フラグでCLIオプションを切り替え
 IS_DOMAIN_DIVIDED_FLAG=""
 USE_DOMAIN_CLS_LOSS_FLAG=""
 USE_NEAREST_NEIGHBOR_LOSS_FLAG=""
-USE_CROSSATTENTION_FLAG=False
 
 # --is_domain_divided を ON にするか
 if [ "$IS_DOMAIN_DIVIDED" = "true" ]; then
@@ -47,13 +42,10 @@ if [ "$USE_NEAREST_NEIGHBOR_LOSS" = "true" ]; then
     USE_NEAREST_NEIGHBOR_LOSS_FLAG="--use_nearest_neighbor_loss"
 fi
 
-if [ "$USE_CROSSATTENTION" = "true" ]; then
-    USE_CROSSATTENTION_FLAG="True"
-fi
-
-DIR=/nas/data/gotoyuta/Result_Domain_Forgetting_Loop/${DATASET}/${TRAINER}/SHOTS${SHOTS}/${CFG}/NCTX-${NCTX}_VISIONDEPTH-${DEPTH_VISION}_TEXTDEPTH-${DEPTH_TEXT}_VAdapter-${USE_VISION_ADAPTER}_TAdapter-${USE_TEXT_ADAPTER}
-# CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}_seed${SEED}.csv
-
+# DIR=output/${DATASET}/${TRAINER}/${CFG}/seed${SEED}
+# DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}/seed${SEED}/${TODAY}
+# CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_seed${SEED}.csv
+DIR=/nas/data/gotoyuta/Result_Domain_Forgetting_Loop/${DATASET}/${TRAINER}/SHOTS${SHOTS}/${CFG}/nctx${NCTX}_text-depth${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}
 
 echo "Run this job and save the output to ${DIR}"
 python train_loop.py \
@@ -61,7 +53,7 @@ python train_loop.py \
     --seed ${SEED} \
     --trainer ${TRAINER} \
     --dataset-config-file configs/datasets/${DATASET}.yaml \
-    --config-file configs/trainers/IVLP/${CFG}.yaml \
+    --config-file configs/trainers/${TRAINER}/${CFG}.yaml \
     --forget_domains "${DOMAIN_LIST[@]}" \
     --output-dir ${DIR} \
     --num_shots ${SHOTS} \
@@ -72,13 +64,9 @@ python train_loop.py \
     ${IS_DOMAIN_DIVIDED_FLAG} \
     ${USE_DOMAIN_CLS_LOSS_FLAG} \
     ${USE_NEAREST_NEIGHBOR_LOSS_FLAG} \
-    TRAINER.IVLP.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
-    TRAINER.IVLP.N_CTX_VISION ${NCTX} \
-    TRAINER.IVLP.PROMPT_DEPTH_TEXT ${DEPTH_TEXT} \
-    TRAINER.IVLP.N_CTX_TEXT ${NCTX} \
-    USE_CROSSATTENTION ${USE_CROSSATTENTION_FLAG} \
-    INSERT_LAYER_ATTN ${DEPTH_VISION} \
-    USE_TEXT_ADAPTER ${USE_TEXT_ADAPTER} \
-    USE_VISION_ADAPTER ${USE_VISION_ADAPTER}
-
-
+    TRAINER.${TRAINER}.PROMPT_DEPTH_VISION ${DEPTH_VISION} \
+    TRAINER.${TRAINER}.N_CTX_VISION ${NCTX} \
+    TRAINER.${TRAINER}.PROMPT_DEPTH_TEXT ${DEPTH_TEXT} \
+    TRAINER.${TRAINER}.N_CTX_TEXT ${NCTX} \
+    # DATASET.NUM_SHOTS ${SHOTS} \
+        # DATASET.SUBSAMPLE_CLASSES base
