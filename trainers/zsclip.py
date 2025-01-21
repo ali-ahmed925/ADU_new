@@ -38,6 +38,7 @@ CUSTOM_TEMPLATES = {
     "DomainNetMiniDF": "a photo of a {}",
     "VLCSDF": "a photo of a {}",
     "Office31DF": "a photo of a {}",
+    "ImageNetDF": "a photo of a {}",
 }
 
 from dassl.utils import (

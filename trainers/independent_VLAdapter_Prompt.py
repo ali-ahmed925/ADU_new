@@ -55,6 +55,47 @@ def load_clip_to_cpu(cfg):
     return model
 
 
+class FixedEmbeddings():
+    def __init__(self, cfg, classnames, clip_model):
+        clip_imsize = clip_model.visual.input_resolution
+        cfg_imsize = cfg.INPUT.SIZE[0]
+        assert cfg_imsize == clip_imsize, f"cfg_imsize ({cfg_imsize}) must equal to clip_imsize ({clip_imsize})"
+
+        prompt_prefix = "a photo of a"
+        print('Vision Prompting Design')
+        print(f'Initial context: "{prompt_prefix}"')
+        print(f"Number of context words (tokens) for Vision prompting: {cfg.TRAINER.VPT.N_CTX_VISION}")
+        print(f"Using fixed hand crated prompts")
+
+        # FIXME
+        if cfg.DATASET.NAME == "OfficeHomeDF":
+            root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
+            dataset_dir = osp.join(root, "office_home_dg")
+            embedding_file = dataset_dir + "/a_photo_of_a_cls.pt"
+            
+
+        elif cfg.DATASET.NAME == "DomainNetMiniDF":
+            embedding_file = "/home/gotoyuta/lab/Dataset/domainnet/a_photo_of_a_cls.pt"
+        elif cfg.DATASET.NAME == "ImageNetDF":
+            embedding_file = "/home/gotoyuta/lab/Dataset/IMAGENET/a_photo_of_a_cls.pt"
+
+        if osp.exists(embedding_file):
+            print(f"Loading text features from {embedding_file}")
+            text_features = torch.load(embedding_file)
+        else:
+            print(f"Generating text features and saving to {embedding_file}")
+            classnames = [name.replace("_", " ") for name in classnames]
+            prompts = [prompt_prefix + " " + name + "." for name in classnames]
+            tokenized_prompts = torch.cat([clip.tokenize(p) for p in prompts])
+            with torch.no_grad():
+                text_features = clip_model.encode_text(tokenized_prompts)
+            torch.save(text_features, embedding_file)
+
+        self.fixed_embeddings = text_features
+
+    def return_fixed_embeddings(self):
+        return self.fixed_embeddings
+
 class TextEncoder(nn.Module):
     def __init__(self, clip_model):
         super().__init__()
@@ -170,14 +211,26 @@ class VLPromptLearner(nn.Module):
 class CustomCLIP(nn.Module):
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
-        self.prompt_learner = VLPromptLearner(cfg, classnames, clip_model)
-        self.tokenized_prompts = self.prompt_learner.tokenized_prompts
+        if cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT == 0:
+            self.embeddings = FixedEmbeddings(cfg, classnames, clip_model)
+        else :
+            self.prompt_learner = VLPromptLearner(cfg, classnames, clip_model)
+            self.tokenized_prompts = self.prompt_learner.tokenized_prompts
+            self.text_encoder = TextEncoder(clip_model)
+        # self.prompt_learner = VLPromptLearner(cfg, classnames, clip_model)
+        # self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         self.image_encoder = clip_model.visual
-        self.text_encoder = TextEncoder(clip_model)
+        # self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
-        self.vision_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        self.text_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        self.use_vision_adapter = cfg.USE_VISION_ADAPTER
+        self.use_text_adapter = cfg.USE_TEXT_ADAPTER
+        if self.use_vision_adapter:
+            self.vision_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        if self.use_text_adapter:
+            self.text_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        # self.vision_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
+        # self.text_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
         if cfg.USE_DOMAIN_CLASIFIER_LOSS:
             if cfg.DOMAIN_CLASS_DIVIDED:
                 if cfg.IS_DOMAIN_DIVIDED:
@@ -197,17 +250,29 @@ class CustomCLIP(nn.Module):
                     self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
             self.domain_classifier.to(self.dtype)
         self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
+        self.text_depth = cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT 
 
     def forward(self, image, label=None):
-        tokenized_prompts = self.tokenized_prompts
+        # tokenized_prompts = self.tokenized_prompts
         logit_scale = self.logit_scale.exp()
 
-        prompts = self.prompt_learner()
-        text_features = self.text_encoder(prompts, tokenized_prompts)
+        # prompts = self.prompt_learner()
+        # text_features = self.text_encoder(prompts, tokenized_prompts)
+        if self.text_depth == 0:
+            text_features = self.embeddings.return_fixed_embeddings().cuda()
+        else :
+            tokenized_prompts = self.tokenized_prompts
+            prompts = self.prompt_learner()
+            text_features = self.text_encoder(prompts, tokenized_prompts)
         image_features = self.image_encoder(image.type(self.dtype))
         
-        image_features = self.vision_adapter(image_features)
-        text_features = self.text_adapter(text_features)
+        # image_features = self.vision_adapter(image_features)
+        # text_features = self.text_adapter(text_features)
+        if self.use_vision_adapter:
+            image_features = self.vision_adapter(image_features)
+        if self.use_text_adapter:
+            text_features = self.text_adapter(text_features)
+
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
