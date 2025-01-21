@@ -32,7 +32,7 @@ class ImageNet(DatasetBase):
             train = self.read_data(classnames, "train")
             # Follow standard practice to perform evaluation on the val set
             # Also used as the val set (so evaluate the last-step model)
-            test = self.read_data(classnames, "val")
+            test = self.read_data(classnames, "val_img_folder")
 
             preprocessed = {"train": train, "test": test}
             with open(self.preprocessed, "wb") as f:
@@ -80,25 +80,25 @@ class ImageNet(DatasetBase):
         split = split_dir
         split_dir = os.path.join(self.image_dir, split_dir)
         items = []
-        if split == "train":
-            folders = sorted(f.name for f in os.scandir(split_dir) if f.is_dir())
+        # if split == "train":
+        folders = sorted(f.name for f in os.scandir(split_dir) if f.is_dir())
 
-            for label, folder in enumerate(folders):
-                imnames = listdir_nohidden(os.path.join(split_dir, folder))
-                classname = classnames[folder]
-                for imname in imnames:
-                    impath = os.path.join(split_dir, folder, imname)
-                    item = Datum(impath=impath, label=label, classname=classname)
-                    items.append(item)
-        else :
-            file_path = '/home/gotoyuta/lab/Dataset/IMAGENET/ILSVRC2012_validation_ground_truth.txt' #FIXME
-            with open(file_path, 'r', encoding='utf-8') as file:
-                label_list = [int(line.strip()) for line in file]
-            imnames = listdir_nohidden(split_dir)
-            for imname, label in zip(imnames, label_list):
-                impath = os.path.join(split_dir, imname)
-                classname = None 
-                item = Datum(impath=impath, label=label - 1, classname=classname)
+        for label, folder in enumerate(folders):
+            imnames = listdir_nohidden(os.path.join(split_dir, folder))
+            classname = classnames[folder]
+            for imname in imnames:
+                impath = os.path.join(split_dir, folder, imname)
+                item = Datum(impath=impath, label=label, classname=classname)
                 items.append(item)
+        # else :
+        #     file_path = '/home/gotoyuta/lab/Dataset/IMAGENET/ILSVRC2012_validation_ground_truth.txt' #FIXME
+        #     with open(file_path, 'r', encoding='utf-8') as file:
+        #         label_list = [int(line.strip()) for line in file]
+        #     imnames = listdir_nohidden(split_dir)
+        #     for imname, label in zip(imnames, label_list):
+        #         impath = os.path.join(split_dir, imname)
+        #         classname = None 
+        #         item = Datum(impath=impath, label=label - 1, classname=classname)
+        #         items.append(item)
 
         return items
