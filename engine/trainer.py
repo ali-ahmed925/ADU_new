@@ -20,7 +20,7 @@ from dassl.evaluation import build_evaluator
 
 from dassl.engine import SimpleTrainer
 
-from utils.loss_fn import Entropy, cossine_embedding_loss, get_entropy, get_entropy_local
+from utils.loss_fn import Entropy, cossine_embedding_loss, get_entropy, get_entropy_local,orthogonality_loss
 from dassl.metrics.accuracy import compute_accuracy
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 from torch.nn import functional as F
@@ -123,6 +123,9 @@ class TrainerDF(SimpleTrainer):
         self.domain_class_divided = cfg.DOMAIN_CLASS_DIVIDED
         if self.use_nearest_neighbor_loss:
             self.nnl = SoftNearestNeighborsLoss()
+        self.use_orthogonal_loss = cfg.USE_ORTHOGONAL_LOSS
+        # if self.use_orthogonal_loss:
+        #     sel
 
         self.csv_file_path = cfg.CSV_FILE_PATH
         if not osp.exists(self.csv_file_path):
@@ -195,7 +198,6 @@ class TrainerDF(SimpleTrainer):
     
     def forward_backward(self, batch):
         image, label, domain = self.parse_batch_train(batch)
-        
         prec = self.cfg.TRAINER.COOP.PREC
         if prec == "amp":
             with autocast():
@@ -267,6 +269,9 @@ class TrainerDF(SimpleTrainer):
                 if self.use_nearest_neighbor_loss :
                     domain_nn_loss = self.nnl(img_feat, target_label)
                     loss += domain_nn_loss
+                if self.use_orthogonal_loss:
+                    domain_orthogonal_loss = orthogonality_loss(img_feat, target_label)
+                    loss += domain_orthogonal_loss
             else :
                 loss = F.cross_entropy(output, label)
             self.model_backward_and_update(loss)
@@ -278,6 +283,7 @@ class TrainerDF(SimpleTrainer):
                 "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
                 "loss_domain_cls": domain_cls_loss.item() if self.use_domain_classifier_loss else 0,
                 "loss_domain_nn": domain_nn_loss.item() if self.use_nearest_neighbor_loss else 0,
+                "loss_domain_ortho": domain_orthogonal_loss.item() if self.use_orthogonal_loss else 0,
                 # "acc": compute_accuracy(output, label)[0].item(),
             }
             acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)

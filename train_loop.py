@@ -188,6 +188,8 @@ def extend_cfg(cfg, args):
 
     cfg.INSERT_LAYER_ATTN = 9
 
+    cfg.USE_ORTHOGONAL_LOSS = False
+
     cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
     cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False
 
