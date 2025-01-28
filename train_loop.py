@@ -73,8 +73,6 @@ import trainers.independent_VLAdapter_Prompt
 import trainers.independent_VLAdapter_Prompt_SelectPatch
 import trainers.independent_VLAdapter_Prompt_Multiple
 
-import trainers.independent_VLAdapter_Prompt_ClassToken
-
 ######### Baseline
 import trainers.clipfit_df
 
