@@ -73,6 +73,8 @@ import trainers.independent_VLAdapter_Prompt
 import trainers.independent_VLAdapter_Prompt_SelectPatch
 import trainers.independent_VLAdapter_Prompt_Multiple
 
+import trainers.independent_VLAdapter_Prompt_ClassToken
+
 ######### Baseline
 import trainers.clipfit_df
 
@@ -187,6 +189,8 @@ def extend_cfg(cfg, args):
     cfg.INDEPENDENT_LEARNABLE_VISION = True
 
     cfg.INSERT_LAYER_ATTN = 9
+
+    cfg.USE_ORTHOGONAL_LOSS = False
 
     cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
     cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False

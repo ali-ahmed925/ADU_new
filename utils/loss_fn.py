@@ -32,6 +32,38 @@ def get_entropy_local(output):
   entropy = torch.sum(prob * torch.log(prob + 1e-5), dim=2)
   return -entropy
 
+def orthogonality_loss(features, labels):
+    """
+    バッチ内の特徴が直行性を持つように損失を計算。
+    同一ラベル間の特徴は高い類似度を持ち、異なるラベル間の特徴は低い類似度を持つ。
+
+    Args:
+        features (torch.Tensor): 画像特徴 (batch_size, feature_dim)
+        labels (torch.Tensor): ラベル (batch_size)
+
+    Returns:
+        torch.Tensor: 損失値
+    """
+    # 特徴を正規化（コサイン類似度の計算のため）
+    # normalized_features = F.normalize(features, p=2, dim=1)
+
+    # コサイン類似度行列の計算 (batch_size, batch_size)
+    cosine_similarity_matrix = torch.mm(features, features.T)
+
+    # ラベル行列の作成
+    label_matrix = labels.unsqueeze(1) == labels.unsqueeze(0)  # 同一ラベルなら True
+    label_matrix = label_matrix.float()
+
+    # 同一ラベル間の類似度を最大化
+    positive_loss = (1 - cosine_similarity_matrix) ** 2 * label_matrix
+
+    # 異なるラベル間の類似度を最小化
+    negative_loss = cosine_similarity_matrix ** 2 * (1 - label_matrix)
+
+    # 損失の合計
+    loss = positive_loss.sum() + negative_loss.sum()
+    return loss / (features.size(0) ** 2)  # 平均化
+
 def entropy_local_topk(p, label, num_of_local_feature, top_k=3):
     """
     Extract non-Top-K regions and calculate entropy.

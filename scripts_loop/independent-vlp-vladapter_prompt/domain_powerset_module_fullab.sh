@@ -10,26 +10,21 @@ SHOTS=${6}
 EXPNAME=${7}
 DATASETSEED=${8}
 IS_DOMAIN_DIVIDED=${9} # true false
-USE_CROSSATTENTION=True
+USE_CROSSATTENTION=true
 # true/false のフルアブレーション
+DEPTH_VISION=9
 
 
 for DEPTH_TEXT in 0 1;do 
-    for DEPTH_VISION in 9;do
-        for USE_VISION_ADAPTER in False True;do
-            for USE_TEXT_ADAPTER in False True;do 
-                if [ "$DEPTH_TEXT" -eq 0 ] && [ "$DEPTH_VISION" -eq 0 ] && [ "$USE_VISION_ADAPTER" = "False" ] && [ "$USE_TEXT_ADAPTER" = "False" ]; then
-                    continue
-                fi
-                if [ "$DEPTH_TEXT" -eq 1 ] && [ "$DEPTH_VISION" -eq 9 ] && [ "$USE_VISION_ADAPTER" = "True" ] && [ "$USE_TEXT_ADAPTER" = "True" ]; then
-                    continue
-                fi
-                bash scripts_loop/independent-vlp-vladapter_prompt/domain_forgetting_module_fullab.sh $CUDA_DEVICE $DATASET $SEED $CFG $NCTX $DEPTH_VISION $DEPTH_TEXT \
-                    true true $IS_DOMAIN_DIVIDED \
-                    $SHOTS $EXPNAME $USE_CROSSATTENTION $DATASETSEED $USE_VISION_ADAPTER $USE_VISION_ADAPTER
-            done
+    # for DEPTH_VISION in 9;do
+    for USE_VISION_ADAPTER in False True;do
+        for USE_TEXT_ADAPTER in False True;do 
+            bash scripts_loop/independent-vlp-vladapter_prompt/domain_forgetting_module_fullab.sh $CUDA_DEVICE $DATASET $SEED $CFG $NCTX $DEPTH_VISION $DEPTH_TEXT \
+                true false $IS_DOMAIN_DIVIDED \
+                $SHOTS $EXPNAME $USE_CROSSATTENTION $DATASETSEED $USE_VISION_ADAPTER $USE_TEXT_ADAPTER
         done
     done
+    # done
 done
 
 
