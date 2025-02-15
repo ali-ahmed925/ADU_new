@@ -5,9 +5,41 @@ from dassl.data.datasets import DATASET_REGISTRY, Datum, DatasetBase
 from dassl.utils import mkdir_if_missing
 from dassl.data.datasets.dg import DigitsDG
 import random
+from clip import clip
+import torch
 
 DOMAIN_NAMES = ["art", "clipart", "product", "real_world"]
 
+class Datum_w_Soft(Datum):
+    def __init__(self, impath="", label=0, domain=0, classname="", soft_domain_label=None):
+        super().__init__(impath, label, domain, classname)
+        self._soft_domain_label = soft_domain_label
+
+    @property
+    def soft_domain_label(self):
+        return self._soft_domain_label
+
+# def load_clip_to_cpu_expert(cfg):
+#     backbone_name = cfg.MODEL.BACKBONE.NAME
+#     url = clip._MODELS[backbone_name]
+#     model_path = clip._download(url)
+
+#     try:
+#         # loading JIT archive
+#         model = torch.jit.load(model_path, map_location="cpu").eval()
+#         state_dict = None
+
+#     except RuntimeError:
+#         state_dict = torch.load(model_path, map_location="cpu")
+#     design_details = {"trainer": 'CoOp',
+#                       "vision_depth": 0,
+#                       "language_depth": 0, "vision_ctx": 0,
+#                       "language_ctx": 0}
+#     model = clip.build_model(state_dict or model.state_dict(), design_details)
+
+#     return model
+
+import pickle
 @DATASET_REGISTRY.register()
 class OfficeHomeDF(DatasetBase):
     """Office-Home.
@@ -30,6 +62,17 @@ class OfficeHomeDF(DatasetBase):
         data_url = "https://drive.google.com/uc?id=1gkbf_KaxoBws-GWT3XIPZ7BnkqbAxIFa"
         root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
         self.dataset_dir = osp.join(root, dataset_dir)
+        if cfg.USE_SOFT_DOMAIN_LABEL:
+            if cfg.PREPROCESS_SOFT_LABEL == "Total":
+                save_path = "/nas/data/gotoyuta/Dataset/office_home_dg/soft_label_officehome_tot_datasetseed1_16shots.pkl"
+            elif cfg.PREPROCESS_SOFT_LABEL == "Class":
+                save_path = "/nas/data/gotoyuta/Dataset/office_home_dg/soft_label_officehome_datasetseed1_16shots.pkl"
+            # save_path = "soft_labels.pkl"
+            with open(save_path, "rb") as f:
+                loaded_data = pickle.load(f)
+            self.soft_label = loaded_data["euclidean"].cpu()
+        else :
+            self.soft_label = None
         train, val, test = [], [], []
         if not osp.exists(self.dataset_dir):
             dst = osp.join(root, "office_home_dg.zip")
@@ -39,9 +82,14 @@ class OfficeHomeDF(DatasetBase):
         #     cfg.DATASET.SOURCE_DOMAINS, cfg.DATASET.TARGET_DOMAINS
         # )
         for domain in train_domains: #FIXME
-            train += read_data(
-                self.dataset_dir, [domain], "train"
-            )
+            if self.soft_label is not None:
+                train += read_data(
+                    self.dataset_dir, [domain], "train", self.soft_label
+                )
+            else :
+                train += read_data(
+                    self.dataset_dir, [domain], "train"
+                )
             val += read_data(
                 self.dataset_dir, [domain], "val"
             )
@@ -103,7 +151,7 @@ class OfficeHomeDF(DatasetBase):
         return tracker
 
 
-def read_data(dataset_dir, input_domains, split):
+def read_data(dataset_dir, input_domains, split, domain_soft_label=None):
 
         def _load_data_from_directory(directory):
             folders = listdir_nohidden(directory)
@@ -130,15 +178,25 @@ def read_data(dataset_dir, input_domains, split):
                 split_dir = osp.join(dataset_dir, dname, split)
                 impath_label_list = _load_data_from_directory(split_dir)
 
-            for impath, label in impath_label_list:
+            for idx, (impath, label) in enumerate(impath_label_list):
                 class_name = impath.split("/")[-2].lower()
-                item = Datum(
-                    impath=impath,
-                    label=label,
-                    domain=DOMAIN_NAMES.index(dname),
-                    classname=class_name
-                )
-                items.append(item)
+                if domain_soft_label is not None:
+                    item = Datum_w_Soft(
+                        impath=impath,
+                        label=label,
+                        domain=DOMAIN_NAMES.index(dname),
+                        classname=class_name,
+                        soft_domain_label=domain_soft_label[idx]
+                    )
+                    items.append(item)
+                else :
+                    item = Datum(
+                        impath=impath,
+                        label=label,
+                        domain=DOMAIN_NAMES.index(dname),
+                        classname=class_name
+                    )
+                    items.append(item)
 
         return items
 
