@@ -8,7 +8,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
-from dassl.data import DataManager
+# from dassl.data import DataManager
 from dassl.optim import build_optimizer, build_lr_scheduler
 from dassl.utils import (
     MetricMeter, AverageMeter, tolist_if_not, count_num_param, load_checkpoint,
@@ -18,7 +18,7 @@ from dassl.utils import (
 from dassl.modeling import build_head, build_backbone
 from dassl.evaluation import build_evaluator
 
-from dassl.engine import SimpleTrainer
+from dassl.engine import SimpleTrainer, TrainerBase, SimpleNet
 
 from utils.loss_fn import Entropy, cossine_embedding_loss, get_entropy, get_entropy_local,orthogonality_loss
 from dassl.metrics.accuracy import compute_accuracy
@@ -30,6 +30,7 @@ from utils.data_augmentation import get_jigsaw_tensor
 import pandas as pd
 from torchvision.transforms import v2
 from clip import clip
+from .dataset_manager import DataManager
 
 CUSTOM_TEMPLATES = {
     "OxfordPets": "a photo of a {}, a type of pet.",
@@ -75,8 +76,197 @@ def load_clip_to_cpu_expert(cfg):
     model = clip.build_model(state_dict or model.state_dict(), design_details)
 
     return model
+class SimpleTrainer_(TrainerBase):
+    """A simple trainer class implementing generic functions."""
 
-class TrainerDF(SimpleTrainer):
+    def __init__(self, cfg):
+        super().__init__()
+        self.check_cfg(cfg)
+
+        if torch.cuda.is_available() and cfg.USE_CUDA:
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+
+        # Save as attributes some frequently used variables
+        self.start_epoch = self.epoch = 0
+        self.max_epoch = cfg.OPTIM.MAX_EPOCH
+        self.output_dir = cfg.OUTPUT_DIR
+
+        self.cfg = cfg
+        self.build_data_loader()
+        self.build_model()
+        self.evaluator = build_evaluator(cfg, lab2cname=self.lab2cname)
+        self.best_result = -np.inf
+
+    def check_cfg(self, cfg):
+        """Check whether some variables are set correctly for
+        the trainer (optional).
+
+        For example, a trainer might require a particular sampler
+        for training such as 'RandomDomainSampler', so it is good
+        to do the checking:
+
+        assert cfg.DATALOADER.SAMPLER_TRAIN == 'RandomDomainSampler'
+        """
+        pass
+
+    def build_data_loader(self):
+        """Create essential data-related attributes.
+
+        A re-implementation of this method must create the
+        same attributes (self.dm is optional).
+        """
+        dm = DataManager(self.cfg)
+
+        self.train_loader_x = dm.train_loader_x
+        self.train_loader_u = dm.train_loader_u  # optional, can be None
+        self.val_loader = dm.val_loader  # optional, can be None
+        self.test_loader = dm.test_loader
+
+        self.num_classes = dm.num_classes
+        self.num_source_domains = dm.num_source_domains
+        self.lab2cname = dm.lab2cname  # dict {label: classname}
+
+        self.dm = dm
+
+    def build_model(self):
+        """Build and register model.
+
+        The default builds a classification model along with its
+        optimizer and scheduler.
+
+        Custom trainers can re-implement this method if necessary.
+        """
+        cfg = self.cfg
+
+        print("Building model")
+        self.model = SimpleNet(cfg, cfg.MODEL, self.num_classes)
+        if cfg.MODEL.INIT_WEIGHTS:
+            load_pretrained_weights(self.model, cfg.MODEL.INIT_WEIGHTS)
+        self.model.to(self.device)
+        print(f"# params: {count_num_param(self.model):,}")
+        self.optim = build_optimizer(self.model, cfg.OPTIM)
+        self.sched = build_lr_scheduler(self.optim, cfg.OPTIM)
+        self.register_model("model", self.model, self.optim, self.sched)
+
+        device_count = torch.cuda.device_count()
+        if device_count > 1:
+            print(f"Detected {device_count} GPUs (use nn.DataParallel)")
+            self.model = nn.DataParallel(self.model)
+
+    def train(self):
+        super().train(self.start_epoch, self.max_epoch)
+
+    def before_train(self):
+        directory = self.cfg.OUTPUT_DIR
+        if self.cfg.RESUME:
+            directory = self.cfg.RESUME
+        self.start_epoch = self.resume_model_if_exist(directory)
+
+        # Initialize summary writer
+        writer_dir = osp.join(self.output_dir, "tensorboard")
+        mkdir_if_missing(writer_dir)
+        self.init_writer(writer_dir)
+
+        # Remember the starting time (for computing the elapsed time)
+        self.time_start = time.time()
+
+    def after_train(self):
+        print("Finish training")
+
+        do_test = not self.cfg.TEST.NO_TEST
+        if do_test:
+            if self.cfg.TEST.FINAL_MODEL == "best_val":
+                print("Deploy the model with the best val performance")
+                self.load_model(self.output_dir)
+            else:
+                print("Deploy the last-epoch model")
+            self.test()
+
+        # Show elapsed time
+        elapsed = round(time.time() - self.time_start)
+        elapsed = str(datetime.timedelta(seconds=elapsed))
+        print(f"Elapsed: {elapsed}")
+
+        # Close writer
+        self.close_writer()
+
+    def after_epoch(self):
+        last_epoch = (self.epoch + 1) == self.max_epoch
+        do_test = not self.cfg.TEST.NO_TEST
+        meet_checkpoint_freq = (
+            (self.epoch + 1) % self.cfg.TRAIN.CHECKPOINT_FREQ == 0
+            if self.cfg.TRAIN.CHECKPOINT_FREQ > 0 else False
+        )
+
+        if do_test and self.cfg.TEST.FINAL_MODEL == "best_val":
+            curr_result = self.test(split="val")
+            is_best = curr_result > self.best_result
+            if is_best:
+                self.best_result = curr_result
+                self.save_model(
+                    self.epoch,
+                    self.output_dir,
+                    val_result=curr_result,
+                    model_name="model-best.pth.tar"
+                )
+
+        if meet_checkpoint_freq or last_epoch:
+            self.save_model(self.epoch, self.output_dir)
+
+    @torch.no_grad()
+    def test(self, split=None):
+        """A generic testing pipeline."""
+        self.set_model_mode("eval")
+        self.evaluator.reset()
+
+        if split is None:
+            split = self.cfg.TEST.SPLIT
+
+        if split == "val" and self.val_loader is not None:
+            data_loader = self.val_loader
+        else:
+            split = "test"  # in case val_loader is None
+            data_loader = self.test_loader
+
+        print(f"Evaluate on the *{split}* set")
+
+        for batch_idx, batch in enumerate(tqdm(data_loader)):
+            input, label = self.parse_batch_test(batch)
+            output = self.model_inference(input)
+            self.evaluator.process(output, label)
+
+        results = self.evaluator.evaluate()
+
+        for k, v in results.items():
+            tag = f"{split}/{k}"
+            self.write_scalar(tag, v, self.epoch)
+
+        return list(results.values())[0]
+
+    def model_inference(self, input):
+        return self.model(input)
+
+    def parse_batch_test(self, batch):
+        input = batch["img"]
+        label = batch["label"]
+
+        input = input.to(self.device)
+        label = label.to(self.device)
+
+        return input, label
+
+    def get_current_lr(self, names=None):
+        names = self.get_model_names(names)
+        name = names[0]
+        return self._optims[name].param_groups[0]["lr"]
+
+
+    
+    
+
+class TrainerDF(SimpleTrainer_):
     def __init__(self, cfg):
         super().__init__(cfg)
         if cfg.DATASET.NAME == "OfficeHomeDF":
@@ -124,6 +314,7 @@ class TrainerDF(SimpleTrainer):
         if self.use_nearest_neighbor_loss:
             self.nnl = SoftNearestNeighborsLoss()
         self.use_orthogonal_loss = cfg.USE_ORTHOGONAL_LOSS
+        self.use_softlabel_dloss = cfg.USE_SOFT_DOMAIN_LABEL
         # if self.use_orthogonal_loss:
         #     sel
 
@@ -197,7 +388,10 @@ class TrainerDF(SimpleTrainer):
         return self.metrics_dict
     
     def forward_backward(self, batch):
-        image, label, domain = self.parse_batch_train(batch)
+        if self.use_softlabel_dloss:
+            image, label, domain, domain_soft_label = self.parse_batch_train(batch)
+        else:
+            image, label, domain = self.parse_batch_train(batch)
         prec = self.cfg.TRAINER.COOP.PREC
         if prec == "amp":
             with autocast():
@@ -264,7 +458,11 @@ class TrainerDF(SimpleTrainer):
                 #####################################################################
 
                 if self.use_domain_classifier_loss :
-                    domain_cls_loss = F.cross_entropy(domain_output, target_label)
+                    if self.use_softlabel_dloss:
+                        pass
+                        domain_cls_loss = F.kl_div(F.log_softmax(domain_output, dim=1), domain_soft_label, reduction="batchmean")
+                    else :
+                        domain_cls_loss = F.cross_entropy(domain_output, target_label)
                     loss += domain_cls_loss
                 if self.use_nearest_neighbor_loss :
                     domain_nn_loss = self.nnl(img_feat, target_label)
@@ -306,10 +504,16 @@ class TrainerDF(SimpleTrainer):
         input = batch["img"]
         label = batch["label"]
         domain = batch["domain"]
+        if self.use_softlabel_dloss:
+            soft_domain_label = batch["soft_domain_label"]
         
         input = input.to(dtype=input.dtype, device=self.device)
         label = label.to(dtype=label.dtype, device=self.device)
         domain = domain.to(dtype=domain.dtype, device=self.device)
+        if self.use_softlabel_dloss:
+            soft_domain_label = batch["soft_domain_label"]
+            soft_domain_label = soft_domain_label.to(dtype=soft_domain_label.dtype, device=self.device)
+            return input, label, domain, soft_domain_label
         return input, label, domain
 
     def parse_batch_test(self, batch):
