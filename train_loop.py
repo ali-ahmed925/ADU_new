@@ -179,6 +179,8 @@ def extend_cfg(cfg, args):
     # cfg.USE_SOFT_LABEL_FOR_DLOSS = False
     cfg.USE_SOFT_DOMAIN_LABEL = False
     cfg.PREPROCESS_SOFT_LABEL = "Total" # Total or Class
+    cfg.USE_KLDIV_PENALTY = False
+    cfg.ONLY_KLDIV_FOR_PRV = False
 
     cfg.ADD_LINEAR = False
     cfg.USE_CLASSTOKEN = False
