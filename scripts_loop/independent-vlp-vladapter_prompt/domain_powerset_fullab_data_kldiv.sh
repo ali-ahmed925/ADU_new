@@ -14,12 +14,12 @@ DATASETSEED=${10}
 
 # true/false のフルアブレーション
 for data in office_home_df;do
-for USE_DOMAIN_CLS_LOSS in true false; do
+for USE_DOMAIN_CLS_LOSS in true; do
     for USE_NEAREST_NEIGHBOR_LOSS in false; do
-        for IS_DOMAIN_DIVIDED in false true; do
-            for USE_CROSSATTENTION in false true; do
-            for KLDIV in true;do
-            for KLDIV_ONLY_PRV in true;do
+        for IS_DOMAIN_DIVIDED in true; do
+            for USE_CROSSATTENTION in true; do
+            for KLDIV in kldiv wasserstein;do
+            for KLDIV_ONLY_PRV in false true;do
                 # サブエクスペリメント名の設定
                 SUBEXPNAME=DC-${USE_DOMAIN_CLS_LOSS}_NN-${USE_NEAREST_NEIGHBOR_LOSS}_DIV-${IS_DOMAIN_DIVIDED}_InstPG${USE_CROSSATTENTION}
 
