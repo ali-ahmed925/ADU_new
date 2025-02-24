@@ -321,7 +321,7 @@ class TrainerDF(SimpleTrainer_):
         self.is_only_prv_for_kldiv = cfg.ONLY_KLDIV_FOR_PRV
         from geomloss import SamplesLoss
         self.emd_loss = SamplesLoss("sinkhorn", p=2)
-        if self.kldiv_for_ddl_pena :
+        if self.kldiv_for_ddl_pena is not None :
             self.model_expert = load_clip_to_cpu_expert(cfg)
             self.model_expert.cuda()
             self.model_expert.eval()
@@ -482,16 +482,30 @@ class TrainerDF(SimpleTrainer_):
                 if self.use_orthogonal_loss:
                     domain_orthogonal_loss = orthogonality_loss(img_feat, target_label)
                     loss += domain_orthogonal_loss
-                if self.kldiv_for_ddl_pena:
+                if self.kldiv_for_ddl_pena is not None:
                     if self.is_only_prv_for_kldiv:
                         img_feat_ = img_feat * img_feat.norm(dim=-1, keepdim=True)
-                        # domain_kl_div_loss = F.kl_div(F.log_softmax(img_feat_[prv_domain_mask], dim=1),F.softmax(expert_feat[prv_domain_mask], dim=1), reduction="none").sum(dim=1).mean()
+                        if self.kldiv_for_ddl_pena == "kldiv":
+                            domain_kl_div_loss = F.kl_div(F.log_softmax(img_feat_[prv_domain_mask], dim=1),F.softmax(expert_feat[prv_domain_mask], dim=1), reduction="batchmean")
+                        elif self.kldiv_for_ddl_pena == "wasserstein":
+                            domain_wasserstein_loss = self.emd_loss(img_feat_[prv_domain_mask].to(torch.float), expert_feat[prv_domain_mask].to(torch.float))
+                            domain_kl_div_loss = domain_wasserstein_loss.to(torch.half)
+                        else :
+                            AssertionError
+
+                        # 
                         # print(expert_feat[prv_domain_mask].shape, img_feat[prv_domain_mask].shape, expert_feat.norm(dim=1, keepdim=True)[prv_domain_mask].shape)
-                        domain_wasserstein_loss = self.emd_loss(img_feat_[prv_domain_mask].to(torch.float), expert_feat[prv_domain_mask].to(torch.float))
+                        
                         # domain_kl_div_loss = F.mse_loss(img_feat[prv_domain_mask],(expert_feat / expert_feat.norm(dim=-1, keepdim=True))[prv_domain_mask], reduction="mean")
-                        domain_kl_div_loss = domain_wasserstein_loss.to(torch.half)
+                        
                     else :  
-                        domain_kl_div_loss = F.kl_div(F.log_softmax(img_feat, dim=1),F.log_softmax(expert_feat.norm(dim=-1, keepdim=True), dim=1), reduction="batchmean")
+                        img_feat_ = img_feat * img_feat.norm(dim=-1, keepdim=True)
+                        if self.kldiv_for_ddl_pena == "kldiv":
+                            domain_kl_div_loss = F.kl_div(F.log_softmax(img_feat_, dim=1),F.softmax(expert_feat, dim=1), reduction="batchmean")
+                        elif self.kldiv_for_ddl_pena == "wasserstein":
+                            domain_wasserstein_loss = self.emd_loss(img_feat_.to(torch.float), expert_feat.to(torch.float))
+                            domain_kl_div_loss = domain_wasserstein_loss.to(torch.half)
+                        # domain_kl_div_loss = F.kl_div(F.log_softmax(img_feat, dim=1),F.log_softmax(expert_feat.norm(dim=-1, keepdim=True), dim=1), reduction="batchmean")
                     loss += domain_kl_div_loss
             else :
                 loss = F.cross_entropy(output, label)
