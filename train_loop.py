@@ -544,7 +544,7 @@ if __name__ == "__main__":
         # dataset seed = 6
         seed_list = [2, 3, 4, 5, 8 ,9 ,10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,28, 29, 30]
     elif args.dataset_name == "pacs_df":
-        seed_list = [1, 2, 3, 4, 5, 6]
+        seed_list = [1, 2, 3]
         pass
     elif args.dataset_name == "office31_df":
         seed_list = [1, 2, 3, 4, 5, 6]
