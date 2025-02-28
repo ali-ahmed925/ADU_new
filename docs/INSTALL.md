@@ -46,4 +46,7 @@ pip install -r requirements.txt
 # Update setuptools package 
 pip install setuptools==59.5.0
 pip install opencv-python
+pip install matplotlib
+pip install einops
+pip install segment_anything
 ```
