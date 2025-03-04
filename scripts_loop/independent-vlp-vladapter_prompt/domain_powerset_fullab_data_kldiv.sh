@@ -13,18 +13,22 @@ EXPNAME=${9}
 DATASETSEED=${10}
 
 # true/false のフルアブレーション
-for data in $DATASET ;do
-for USE_DOMAIN_CLS_LOSS in false true; do
+for data in office_home_df;do
+for USE_DOMAIN_CLS_LOSS in true; do
     for USE_NEAREST_NEIGHBOR_LOSS in false; do
         for IS_DOMAIN_DIVIDED in true; do
-            for USE_CROSSATTENTION in false true; do
+            for USE_CROSSATTENTION in true; do
+            for KLDIV in kldiv wasserstein;do
+            for KLDIV_ONLY_PRV in false true;do
                 # サブエクスペリメント名の設定
-                # SUBEXPNAME=DC-${USE_DOMAIN_CLS_LOSS}_NN-${USE_NEAREST_NEIGHBOR_LOSS}_DIV-${IS_DOMAIN_DIVIDED}_InstPG${USE_CROSSATTENTION}
+                SUBEXPNAME=DC-${USE_DOMAIN_CLS_LOSS}_NN-${USE_NEAREST_NEIGHBOR_LOSS}_DIV-${IS_DOMAIN_DIVIDED}_InstPG${USE_CROSSATTENTION}
 
                 # 実行コマンド
                 bash scripts_loop/independent-vlp-vladapter_prompt/domain_forgetting_fullab.sh $CUDA_DEVICE $data $SEED $CFG $NCTX $DEPTH_VISION $DEPTH_TEXT \
                     $USE_DOMAIN_CLS_LOSS $USE_NEAREST_NEIGHBOR_LOSS $IS_DOMAIN_DIVIDED \
-                    $SHOTS $EXPNAME $USE_CROSSATTENTION $DATASETSEED False False 
+                    $SHOTS $EXPNAME $USE_CROSSATTENTION $DATASETSEED False False ${KLDIV} ${KLDIV_ONLY_PRV}
+            done
+            done
             done
         done
     done

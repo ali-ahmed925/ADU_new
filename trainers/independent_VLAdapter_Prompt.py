@@ -78,6 +78,11 @@ class FixedEmbeddings():
             embedding_file = "/home/gotoyuta/lab/Dataset/domainnet/a_photo_of_a_cls.pt"
         elif cfg.DATASET.NAME == "ImageNetDF":
             embedding_file = "/home/gotoyuta/lab/Dataset/IMAGENET/a_photo_of_a_cls.pt"
+        elif cfg.DATASET.NAME == "PACSDF":
+            root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
+            dataset_dir = osp.join(root, "pacs")
+            embedding_file = dataset_dir + "/a_photo_of_a_cls.pt"
+
 
         if osp.exists(embedding_file):
             print(f"Loading text features from {embedding_file}")

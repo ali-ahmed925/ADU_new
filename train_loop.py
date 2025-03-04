@@ -72,7 +72,7 @@ import trainers.independent_VLAdapter_SelectPatch_FullMask
 import trainers.independent_VLAdapter_Prompt
 import trainers.independent_VLAdapter_Prompt_SelectPatch
 import trainers.independent_VLAdapter_Prompt_Multiple
-
+import trainers.zsclip_clustering
 ######### Baseline
 import trainers.clipfit_df
 
@@ -175,6 +175,12 @@ def extend_cfg(cfg, args):
     cfg.DOMAIN_CLASS_DIVIDED = args.domain_class_divided
     cfg.IS_DOMAIN_DIVIDED = args.is_domain_divided
     cfg.CSV_FILE_PATH = args.csv_file_path
+
+    # cfg.USE_SOFT_LABEL_FOR_DLOSS = False
+    cfg.USE_SOFT_DOMAIN_LABEL = False
+    cfg.PREPROCESS_SOFT_LABEL = "Total" # Total or Class
+    cfg.USE_KLDIV_PENALTY = None
+    cfg.ONLY_KLDIV_FOR_PRV = False
 
     cfg.ADD_LINEAR = False
     cfg.USE_CLASSTOKEN = False
@@ -375,6 +381,7 @@ def create_csv_file(filename:str, forget_domain_num: int):
     for idx in range(forget_domain_num):
         data[0].extend(["", f"Forgetdomain{idx+1}", ""])
         data[1].extend(["H", "A", "F"])
+    # data[1].extend(["ave", "std"])
     with open(filename, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerows(data)
@@ -537,7 +544,7 @@ if __name__ == "__main__":
         # dataset seed = 6
         seed_list = [2, 3, 4, 5, 8 ,9 ,10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,28, 29, 30]
     elif args.dataset_name == "pacs_df":
-        seed_list = [1, 2, 3, 4, 5, 6]
+        seed_list = [1, 2, 3]
         pass
     elif args.dataset_name == "office31_df":
         seed_list = [1, 2, 3, 4, 5, 6]
