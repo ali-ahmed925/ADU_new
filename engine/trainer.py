@@ -315,6 +315,7 @@ class TrainerDF(SimpleTrainer_):
             self.nnl = SoftNearestNeighborsLoss()
         self.use_orthogonal_loss = cfg.USE_ORTHOGONAL_LOSS
         self.use_softlabel_dloss = cfg.USE_SOFT_DOMAIN_LABEL
+        self.ddl_loss_weight = cfg.DDL_LOSS_WEIGHT
         # if self.use_orthogonal_loss:
         #     sel
         # self.kldiv_for_ddl_pena = cfg.USE_KLDIV_PENALTY
@@ -475,7 +476,7 @@ class TrainerDF(SimpleTrainer_):
                         domain_cls_loss = F.kl_div(F.log_softmax(domain_output, dim=1), domain_soft_label, reduction="batchmean")
                     else :
                         domain_cls_loss = F.cross_entropy(domain_output, target_label)
-                    loss += domain_cls_loss
+                    loss += self.ddl_loss_weight * domain_cls_loss
                 if self.use_nearest_neighbor_loss :
                     domain_nn_loss = self.nnl(img_feat, target_label)
                     loss += domain_nn_loss

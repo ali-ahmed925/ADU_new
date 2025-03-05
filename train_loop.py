@@ -196,6 +196,8 @@ def extend_cfg(cfg, args):
 
     cfg.USE_ORTHOGONAL_LOSS = False
 
+    cfg.DDL_LOSS_WEIGHT = 1.0
+
     cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
     cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False
 
