@@ -31,6 +31,7 @@ import pandas as pd
 from torchvision.transforms import v2
 from clip import clip
 from .dataset_manager import DataManager
+import cv2
 
 CUSTOM_TEMPLATES = {
     "OxfordPets": "a photo of a {}, a type of pet.",
@@ -412,9 +413,9 @@ class TrainerDF(SimpleTrainer_):
             self.scaler.update()
         else:
             if self.use_domain_classifier_loss :
-                output, img_feat, txt_feat, domain_output = self.model(image)
+                output, img_feat, txt_feat, domain_output, patch_output = self.model(image)
             else :
-                output, img_feat, txt_feat = self.model(image)
+                output, img_feat, txt_feat, patch_output = self.model(image)
             
             # if self.kldiv_for_ddl_pena:
             #     with torch.no_grad():
@@ -583,6 +584,73 @@ class TrainerDF(SimpleTrainer_):
             # Remember the starting time (for computing the elapsed time)
             self.time_start = time.time()
 
+    @torch.no_grad()
+    def get_attention_map(self, split=None):
+        self.set_model_mode("eval")
+        self.evaluator.reset()
+        data_loader = self.train_loader_x
+        # data_loader = self.test_loader
+        # if split is None:
+        #     split = self.cfg.TEST.SPLIT
+
+        # if split == "val" and self.val_loader is not None:
+        #     data_loader = self.val_loader
+        # else:
+        #     split = "test"  # in case val_loader is None
+        #     data_loader = self.test_loader
+
+        print(f"Evaluate on the *{split}* set")
+        eval_dict = {}
+        for batch_idx, batch in enumerate(tqdm(data_loader)):
+            input, label, domain = self.parse_batch_test(batch)
+            if self.use_domain_classifier_loss :
+                output, img_feat, txt_feat, domain_logit, patch_output = self.model_inference(input)
+            else :
+                output, img_feat, txt_feat, patch_output = self.model_inference(input)
+            # self.evaluator.process(output, label)
+
+            # for prv_domain in prv_domain_list:
+            prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+            prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+            # for del_domain in del_domain_list:
+            del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+            del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+            save_base_dir = self.output_dir + "/train_samples/"
+            mkdir_if_missing(save_base_dir)
+            image_number = batch["index"]
+            for idx, (impath, attention_map)in enumerate(zip(batch["impath"], patch_output)):
+                pass
+                precision = torch.argmax(output[idx])
+                original_image = cv2.imread(impath)  # 画像を読み込む
+                original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)  # OpenCV は BGR なので RGB に変換
+                original_image = cv2.resize(original_image, (224, 224))  # 224x224 にリサイズ
+                original_image = original_image / 255.0  # 正規化 (0~1)
+                attention_map = attention_map[:,label[idx]].view(14,14).cpu().numpy()
+                attention_map_resized = cv2.resize(attention_map.astype(np.float32), (224, 224))
+
+                heatmap = (attention_map_resized - attention_map_resized.min()) / (attention_map_resized.max() - attention_map_resized.min())
+                heatmap = cv2.applyColorMap(np.uint8(255 * heatmap), cv2.COLORMAP_JET)
+                superimposed_img = cv2.addWeighted(np.uint8(255 * original_image), 0.6, heatmap, 0.4, 0)
+                if self.domain_list[domain[idx]] in self.del_domain_list:
+                    if precision == label[idx]:
+                        save_dir = save_base_dir + "del_domains/" + "TP/"
+                    else :
+                        save_dir = save_base_dir + "del_domains/" + "FP/"
+                else :
+                    if precision == label[idx]:
+                        save_dir = save_base_dir + "prv_domains/" + "TP/"
+                    else :
+                        save_dir = save_base_dir + "prv_domains/" + "FP/"
+
+                mkdir_if_missing(save_dir)
+                original_image = (original_image * 255).astype(np.uint8)
+
+                cv2.imwrite(save_dir + f"{image_number[idx]}_{self.classnames[label[idx]]}_{self.domain_list[domain[idx]]}_original.png", cv2.cvtColor(original_image, cv2.COLOR_RGB2BGR))
+                cv2.imwrite(save_dir + f"{image_number[idx]}_{self.classnames[label[idx]]}_{self.domain_list[domain[idx]]}_attention_gt{label[idx]}_pr{precision}.png", cv2.cvtColor(superimposed_img, cv2.COLOR_RGB2BGR))
+                a = 0
+
+
+
 
     @torch.no_grad()
     def test(self, split=None):
@@ -605,9 +673,9 @@ class TrainerDF(SimpleTrainer_):
         for batch_idx, batch in enumerate(tqdm(data_loader)):
             input, label, domain = self.parse_batch_test(batch)
             if self.use_domain_classifier_loss :
-                output, img_feat, txt_feat, domain_logit = self.model_inference(input)
+                output, img_feat, txt_feat, domain_logit, output_patch = self.model_inference(input)
             else :
-                output, img_feat, txt_feat = self.model_inference(input)
+                output, img_feat, txt_feat, output_patch = self.model_inference(input)
             self.evaluator.process(output, label)
 
             # for prv_domain in prv_domain_list:
