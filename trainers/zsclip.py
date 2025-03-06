@@ -7,7 +7,7 @@ from dassl.optim import build_optimizer, build_lr_scheduler
 from clip import clip
 from clip.model import convert_weights
 
-from .coop import load_clip_to_cpu
+# from .coop import load_clip_to_cpu
 from .imagenet_templates import IMAGENET_TEMPLATES, IMAGENET_TEMPLATES_SELECT
 from tqdm import tqdm
 from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
@@ -15,6 +15,33 @@ from utils.eval_acc import compute_acc_for_df, compute_acc_for_df_eval
 import cv2
 from PIL import Image
 import matplotlib.pyplot as plt
+
+def load_clip_to_cpu(cfg):
+    backbone_name = cfg.MODEL.BACKBONE.NAME
+    url = clip._MODELS[backbone_name]
+    model_path = clip._download(url)
+
+    try:
+        # loading JIT archive
+        model = torch.jit.load(model_path, map_location="cpu").eval()
+        state_dict = None
+
+    except RuntimeError:
+        state_dict = torch.load(model_path, map_location="cpu")
+    design_details = {"trainer": 'IVLP_VL_Adapter_Prompt',
+                      "vision_depth": 0,
+                      "language_depth": 0, "vision_ctx": 0,
+                      "language_ctx": 0,
+                      "add_linear": cfg.ADD_LINEAR,
+                      "use_classtoken": cfg.USE_CLASSTOKEN,
+                      "use_cross_attention": cfg.USE_CROSSATTENTION,
+                      "independent_cross_attention": cfg.INDEPENDENT_CROSS_ATTENTION,
+                      "independent_learnable_vision": cfg.INDEPENDENT_LEARNABLE_VISION,
+                      "insert_layer": cfg.INSERT_LAYER_ATTN}
+    model = clip.build_model(state_dict or model.state_dict(), design_details)
+
+    return model
+
 
 CUSTOM_TEMPLATES = {
     "OxfordPets": "a photo of a {}, a type of pet.",
@@ -77,11 +104,13 @@ class ZeroshotCLIP(TrainerDF):
         self.clip_model = clip_model
 
     def model_inference(self, image):
-        image_features = self.clip_model.encode_image(image)
+        image_features, patch_features = self.clip_model.encode_image(image)
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        patch_features = patch_features / patch_features.norm(dim=-1, keepdim=True)
         logit_scale = self.clip_model.logit_scale.exp()
         logits = logit_scale * image_features @ self.text_features.t()
-        return logits, image_features, self.text_features
+        logits_patch = logit_scale * torch.matmul(patch_features, self.text_features.t())
+        return logits, image_features, self.text_features, logits_patch
 
     def parse_batch_test(self, batch):
         input = batch["img"]
