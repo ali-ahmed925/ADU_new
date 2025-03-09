@@ -319,14 +319,17 @@ def main(args):
 
     trainer = build_trainer(cfg)
 
-    if args.eval_only:
-        trainer.load_model(args.model_dir, epoch=args.load_epoch)
-        trainer.test()
-        return
+    # if args.eval_only:
+    #     trainer.load_model(args.model_dir, epoch=args.load_epoch)
+    #     trainer.test()
+    #     return
 
-    if not args.no_train:
-        results = trainer.train_loop()
-        return results
+    # if not args.no_train:
+    #     results = trainer.train_loop()
+    #     return results
+    trainer.load_model(args.model_dir, epoch=args.load_epoch)
+    trainer.get_tsne_plots()
+    
     
 def get_loop_prepare(datasetname: str)->Tuple[List[str], Dict]:
     print(datasetname)
@@ -526,123 +529,13 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    forget_domain_lists, base_dict = get_loop_prepare(args.dataset_name)
+    # forget_domain_lists, base_dict = get_loop_prepare(args.dataset_name)
 
-    # DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}/seed${SEED}/${TODAY}
-    # CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}_seed${SEED}.csv
-    # base_output_dir = args.output_dir
-    expname = args.experiment_name
-    subexpname = args.sub_experiment_name
-    base_output_dir = args.output_dir + "/" + expname + "/" + subexpname
-    dataset_seed = args.dataset_seed
-
-    if args.dataset_name == "office_home_df":
-        seed_list = [1, 6, 7]
-
-    elif args.dataset_name == "domainnet_mini_df":
-        #seed_list = [1, 5, 6]
-        seed_list = [1, 6, 7]
-    elif args.dataset_name == "visda17_df":
-        # dataset seed = 6
-        seed_list = [2, 3, 4, 5, 8 ,9 ,10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,28, 29, 30]
-    elif args.dataset_name == "pacs_df":
-        seed_list = [1, 2, 3]
-        pass
-    elif args.dataset_name == "office31_df":
-        seed_list = [1, 2, 3, 4, 5, 6]
-        pass
-    elif args.dataset_name == "imagenet_df":
-        seed_list = [1, 2, 3]
-    res_seed_str = ""
-    for i, s in enumerate(seed_list) :
-        if i == len(seed_list) - 1:
-            res_seed_str += str(s)
-        else:
-            res_seed_str += str(s) + "-"
-
-
-    exp_csv_filedir = args.output_dir + "/" + expname
-    exp_csv_filepath = exp_csv_filedir + f"/results_aveseed-{res_seed_str}_datasetseed{dataset_seed}.csv"
-    if not osp.exists(exp_csv_filedir):
-        os.makedirs(exp_csv_filedir)
-
-    if not osp.exists(exp_csv_filepath):
-        create_csv_file(exp_csv_filepath, len(base_dict))
-    else :
-        pass
-    
-
-    results_dict = {}
-    for seed in seed_list:
-        # seed_list.append(seed)
-        exp_csv_filepath_seedwise = exp_csv_filedir + "/" + f"results_seed{seed}_datasetseed{dataset_seed}.csv"
-        if not osp.exists(exp_csv_filepath_seedwise):
-            create_csv_file(exp_csv_filepath_seedwise, len(base_dict))
-        else :
-            pass
-        results_dict[f"seed{seed}"] = copy.deepcopy(base_dict)
-        for forget_domain_list in forget_domain_lists:
-            args.forget_domains = forget_domain_list
-            args.seed = seed
-            # base_output = /path/datasetname/trainer/Exp/SubExp 
-            # + _seed{seed}_datasetseed{seed}/#FD/ForgetDomain/TODAY
-            now = datetime.now()
-            today = now.strftime("%Y%m%d_%H%M%S")
-            forget_domain_str = "-".join(forget_domain_list)
-            args.output_dir = base_output_dir + f"/seed{seed}_datasetseed{dataset_seed}/ForgetDomain{len(forget_domain_list)}/{forget_domain_str}/{today}" 
-            args.csv_file_path = base_output_dir + f"/seed{seed}_datasetseed{dataset_seed}/ForgetDomain{len(forget_domain_list)}/results.csv"
-            results = main(args)
-            results_dict[f"seed{seed}"][f"forgetdomain_{len(forget_domain_list)}"]["A"].append(results["A"])
-            results_dict[f"seed{seed}"][f"forgetdomain_{len(forget_domain_list)}"]["F"].append(results["F"])
-            results_dict[f"seed{seed}"][f"forgetdomain_{len(forget_domain_list)}"]["H"].append(results["H"])
-        
-        now = datetime.now()
-        today = now.strftime("%Y%m%d_%H%M%S")
-        data_seed = [subexpname, today]
-
-        for idx in range(len(results_dict[f"seed{seed}"])):
-            results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"] = sum(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"]) / len(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"])
-            results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"] = sum(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"]) / len(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"])
-            results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"] = sum(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"]) / len(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"])
-            data_seed.extend(
-                [
-                    results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"],
-                    results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"],
-                    results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"]
-                ]
-            )  
-        
-        with open(exp_csv_filepath_seedwise, mode="a", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow(data_seed)
-    tot_res = len(results_dict) # seed num
-    tot_num_fd = len(base_dict) # forget domain num 
-
-    fin_res = copy.deepcopy(base_dict)
-    for num_fd in range(tot_num_fd):
-        for s in seed_list:
-            fin_res[f"forgetdomain_{num_fd + 1}"]["H"].append(results_dict[f"seed{s}"][f"forgetdomain_{num_fd+1}"]["H"])
-            fin_res[f"forgetdomain_{num_fd + 1}"]["A"].append(results_dict[f"seed{s}"][f"forgetdomain_{num_fd+1}"]["A"])
-            fin_res[f"forgetdomain_{num_fd + 1}"]["F"].append(results_dict[f"seed{s}"][f"forgetdomain_{num_fd+1}"]["F"])
-        
-    now = datetime.now()
-    today = now.strftime("%Y%m%d_%H%M%S")
-    data_tot = [subexpname, today]
-    for num_fd in range(tot_num_fd):
-        fin_res[f"forgetdomain_{num_fd+1}"]["H"] = sum(fin_res[f"forgetdomain_{num_fd+1}"]["H"]) / len (fin_res[f"forgetdomain_{num_fd+1}"]["H"])
-        fin_res[f"forgetdomain_{num_fd+1}"]["A"] = sum(fin_res[f"forgetdomain_{num_fd+1}"]["A"]) / len (fin_res[f"forgetdomain_{num_fd+1}"]["A"])
-        fin_res[f"forgetdomain_{num_fd+1}"]["F"] = sum(fin_res[f"forgetdomain_{num_fd+1}"]["F"]) / len (fin_res[f"forgetdomain_{num_fd+1}"]["F"])
-        data_tot.extend(
-            [
-                fin_res[f"forgetdomain_{num_fd+1}"]["H"],
-                fin_res[f"forgetdomain_{num_fd+1}"]["A"],
-                fin_res[f"forgetdomain_{num_fd+1}"]["F"]
-            ]
-        ) 
-
-    with open(exp_csv_filepath, mode="a", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow(data_tot)
-
-    
-
+    # # DIR=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${DOMAIN_SEC}/${CFG}/CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}/seed${SEED}/${TODAY}
+    # # CSV_FILE_PATH=/nas/data/gotoyuta/Result_Domain_Forgetting/${DATASET}/${TRAINER}/SHOTS${SHOTS}/FORGET_DOMAIN${DOMAIN_COUNT}/${CFG}_CROSS_ATTENTION_nctx${NCTX}_prmpt-depth${DEPTH_VISION}_prtmp-txt${DEPTH_TEXT}_shots${SHOTS}_nnl${USE_NEAREST_NEIGHBOR_LOSS}_dclsl${USE_DOMAIN_CLS_LOSS}_divided${IS_DOMAIN_DIVIDED}_seed${SEED}.csv
+    # # base_output_dir = args.output_dir
+    # expname = args.experiment_name
+    # subexpname = args.sub_experiment_name
+    # base_output_dir = args.output_dir + "/" + expname + "/" + subexpname
+    # dataset_seed = args.dataset_seed
+    main(args)

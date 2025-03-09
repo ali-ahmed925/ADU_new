@@ -256,6 +256,7 @@ class CustomCLIP(nn.Module):
             self.domain_classifier.to(self.dtype)
         self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
         self.text_depth = cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT 
+        self.n_vision_context = cfg.TRAINER.IVLP.N_CTX_VISION
 
     def forward(self, image, label=None):
         # tokenized_prompts = self.tokenized_prompts
@@ -269,27 +270,31 @@ class CustomCLIP(nn.Module):
             tokenized_prompts = self.tokenized_prompts
             prompts = self.prompt_learner()
             text_features = self.text_encoder(prompts, tokenized_prompts)
-        image_features = self.image_encoder(image.type(self.dtype))
+        image_features, image_patch_features = self.image_encoder(image.type(self.dtype))
+        image_patch_features = image_patch_features[:,0:image_patch_features.shape[1] - self.n_vision_context,:]
         
         # image_features = self.vision_adapter(image_features)
         # text_features = self.text_adapter(text_features)
         if self.use_vision_adapter:
             image_features = self.vision_adapter(image_features)
+            image_patch_features = self.vision_adapter(image_patch_features)
         if self.use_text_adapter:
             text_features = self.text_adapter(text_features)
 
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        image_patch_features = image_patch_features / image_patch_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         logits = logit_scale * image_features @ text_features.t()
+        logits_patch = logit_scale * torch.matmul(image_patch_features, text_features.t())
 
         if self.use_domain_cls_loss:
             domain_logit = self.domain_classifier(image_features)
-            return logits, image_features, text_features, domain_logit
+            return logits, image_features, text_features, domain_logit, logits_patch
         # if self.prompt_learner.training:
         #     return F.cross_entropy(logits, label)
 
-        return logits, image_features, text_features
+        return logits, image_features, text_features, logits_patch
 
 class Adapter(nn.Module):
     def __init__(self, c_in, dtype, reduction=4):
