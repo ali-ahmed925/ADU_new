@@ -32,6 +32,8 @@ from torchvision.transforms import v2
 from clip import clip
 from .dataset_manager import DataManager
 import cv2
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
 
 CUSTOM_TEMPLATES = {
     "OxfordPets": "a photo of a {}, a type of pet.",
@@ -648,7 +650,122 @@ class TrainerDF(SimpleTrainer_):
                 cv2.imwrite(save_dir + f"{image_number[idx]}_{self.classnames[label[idx]]}_{self.domain_list[domain[idx]]}_original.png", cv2.cvtColor(original_image, cv2.COLOR_RGB2BGR))
                 cv2.imwrite(save_dir + f"{image_number[idx]}_{self.classnames[label[idx]]}_{self.domain_list[domain[idx]]}_attention_gt{label[idx]}_pr{precision}.png", cv2.cvtColor(superimposed_img, cv2.COLOR_RGB2BGR))
                 a = 0
+    
+    @torch.no_grad()
+    def get_tsne_plots(self, split=None):
+        self.set_model_mode("eval")
+        self.evaluator.reset()
+        data_loader = self.train_loader_x
+        data_loader = self.test_loader
+        # if split is None:
+        #     split = self.cfg.TEST.SPLIT
 
+        # if split == "val" and self.val_loader is not None:
+        #     data_loader = self.val_loader
+        # else:
+        #     split = "test"  # in case val_loader is None
+        #     data_loader = self.test_loader
+
+        print(f"Evaluate on the *{split}* set")
+        eval_dict = {}
+        for batch_idx, batch in enumerate(tqdm(data_loader)):
+            input, label, domain = self.parse_batch_test(batch)
+            if self.use_domain_classifier_loss :
+                output, img_feat, txt_feat, domain_logit, patch_output = self.model_inference(input)
+            else :
+                output, img_feat, txt_feat, patch_output = self.model_inference(input)
+            # self.evaluator.process(output, label)
+            if batch_idx == 0:
+                label_all = label
+                domain_all = domain
+                img_feat_all = img_feat
+                # input_all = input
+
+            else :
+                label_all = torch.cat((label_all, label))
+                domain_all = torch.cat((domain_all, domain))
+                img_feat_all = torch.cat((img_feat_all, img_feat))
+
+            # for prv_domain in prv_domain_list:
+            # prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+            # prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
+            # # for del_domain in del_domain_list:
+            # del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
+            # del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+        clslist = ["aircraft_carrier", "tiger", "whale"]
+        marker_list = ['o', 's', 'D', '^', 'v', 'p', '*', 'x', '+', '<', '>']
+        target_cls_index = [i for i, value in enumerate(self.classnames) if value in clslist]
+        save_base_dir = self.output_dir + "/test_samples_tsne/"
+        # filtered_array = arrayA[np.isin(arrayA, listB)]
+        img_feat_all_numpy = img_feat_all.cpu().numpy()
+        domain_all_numpy = domain_all.cpu().numpy()
+        label_all_numpy = label_all.cpu().numpy()
+        # filterd_mask = np.isin(label_all_numpy, target_cls_index)
+        # img_feat_all = img_feat_all[filterd_mask]
+        # domain_all_numpy = domain_all_numpy[filterd_mask]
+        # label_all_numpy = label_all_numpy[filterd_mask]
+        mkdir_if_missing(save_base_dir)
+        perplexity = min(30, domain_all_numpy.shape[0] - 1)
+        tsne = TSNE(n_components=2, perplexity=perplexity,random_state=42)
+        # print(f"{self.classnames[i]}",img_feat_all_numpy.shape)
+        tsne_results = tsne.fit_transform(img_feat_all_numpy)
+        unique_domains = np.unique(domain_all_numpy)
+        unique_labels = np.unique(label_all_numpy)
+
+        cmap = plt.cm.get_cmap('tab10', len(unique_domains))
+        
+        plt.figure(figsize=(6, 4))
+        # for i_, domain in enumerate(unique_domains):
+        #     for j_, label in enumerate(unique_labels):
+        #         idx = np.where((domain_all_numpy == domain) & (label_all_numpy == label))
+                
+        #         if len(idx[0]) == 0:
+        #             continue  # データがない場合はスキップ
+                
+        #         # 色はドメイン、マーカーはラベルに基づく
+        #         color = cmap(i_)
+        #         marker = marker_list[j_ % len(marker_list)]  # マーカーリストをループ
+                
+        #         plt.scatter(tsne_results[idx, 0], tsne_results[idx, 1],
+        #             color=color, marker=marker, label=f"{self.domain_list[i_]}-{clslist[j_]}",
+        #             s=50, alpha=0.7)
+
+        for i_, domain in enumerate(unique_domains):
+            idx = np.where(np.array(domain_all_numpy) == domain)
+            plt.scatter(tsne_results[idx, 0], tsne_results[idx, 1],
+                        color=cmap(i_), label=self.domain_list[i_], s=10, alpha=0.7)
+        plt.axis('off')
+        plt.legend()
+        # plt.title("t-SNE of Image Features by Domain")
+        # plt.xlabel("t-SNE 1")
+        # plt.ylabel("t-SNE 2")
+        # now_class = self.classnames[i]
+        plt.tight_layout()
+        plt.savefig(save_base_dir + "atotalclass_tsne_s10.png")
+        # for i in range(len(self.classnames)):
+        #     img_feat_all_numpy_ = img_feat_all_numpy[label_all_numpy == i]
+        #     domain_all_numpy_ = domain_all_numpy[label_all_numpy == i]
+        #     perplexity = min(30, domain_all_numpy_.shape[0] - 1)
+        #     tsne = TSNE(n_components=2, perplexity=perplexity,random_state=42)
+        #     print(f"{self.classnames[i]}",img_feat_all_numpy_.shape)
+        #     tsne_results = tsne.fit_transform(img_feat_all_numpy_)
+
+        #     unique_domains = np.unique(domain_all_numpy_)
+        #     cmap = plt.cm.get_cmap('tab10', len(unique_domains))
+            
+        #     plt.figure(figsize=(6, 4))
+        #     for i_, domain in enumerate(unique_domains):
+        #         idx = np.where(np.array(domain_all_numpy_) == domain)
+        #         plt.scatter(tsne_results[idx, 0], tsne_results[idx, 1],
+        #                     color=cmap(i_), label=self.domain_list[i_], s=50, alpha=0.7)
+        #     plt.axis('off')
+        #     plt.legend()
+        #     # plt.title("t-SNE of Image Features by Domain")
+        #     # plt.xlabel("t-SNE 1")
+        #     # plt.ylabel("t-SNE 2")
+        #     now_class = self.classnames[i]
+        #     plt.tight_layout()
+        #     plt.savefig(save_base_dir + f"{now_class}_tsne.png")
 
 
 
