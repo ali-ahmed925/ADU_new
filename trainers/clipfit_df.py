@@ -173,7 +173,7 @@ class CustomCLIP(nn.Module):
         logit_scale = self.logit_scale.exp()
         logits = logit_scale * image_features @ text_features.t()
 
-        return logits, image_features, text_features
+        return logits, image_features, text_features, None
 
 from engine.trainer import TrainerDF
 @TRAINER_REGISTRY.register()
@@ -333,7 +333,7 @@ class ClipFit_DF(TrainerDF):
             self.scaler.step(self.optim)
             self.scaler.update()
         else:
-            output, _, _ = self.model(image)
+            output, _, _, _ = self.model(image)
 
             if not self.cfg.NO_FORGET:
                 entropy = Entropy()
