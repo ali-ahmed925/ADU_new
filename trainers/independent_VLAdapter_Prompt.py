@@ -241,6 +241,8 @@ class CustomCLIP(nn.Module):
                 if cfg.IS_DOMAIN_DIVIDED:
                     if cfg.DATASET.NAME == "Office31DF":
                         self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3*len(classnames))
+                    elif cfg.DATASET.NAME == "ImageNetDF" :
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
                     else:
                         self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
                 else :
@@ -249,6 +251,8 @@ class CustomCLIP(nn.Module):
                 if cfg.IS_DOMAIN_DIVIDED:
                     if cfg.DATASET.NAME == "Office31DF":
                         self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3)
+                    elif cfg.DATASET.NAME == "ImageNetDF" :
+                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
                     else :
                         self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
                 else :
