@@ -177,6 +177,7 @@ def extend_cfg(cfg, args):
     cfg.CSV_FILE_PATH = args.csv_file_path
 
     # cfg.USE_SOFT_LABEL_FOR_DLOSS = False
+    cfg.SOFT_LABEL_UPDATE_EPOCH = 1
     cfg.USE_SOFT_DOMAIN_LABEL = False
     cfg.PREPROCESS_SOFT_LABEL = "Total" # Total or Class
     cfg.USE_KLDIV_PENALTY = None

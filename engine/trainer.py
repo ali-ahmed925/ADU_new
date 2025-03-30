@@ -319,6 +319,8 @@ class TrainerDF(SimpleTrainer_):
         self.use_orthogonal_loss = cfg.USE_ORTHOGONAL_LOSS
         self.use_softlabel_dloss = cfg.USE_SOFT_DOMAIN_LABEL
         self.ddl_loss_weight = cfg.DDL_LOSS_WEIGHT
+        self.soft_label_update_epoch = cfg.SOFT_LABEL_UPDATE_EPOCH
+
         # if self.use_orthogonal_loss:
         #     sel
         # self.kldiv_for_ddl_pena = cfg.USE_KLDIV_PENALTY
@@ -514,6 +516,12 @@ class TrainerDF(SimpleTrainer_):
             else :
                 loss = F.cross_entropy(output, label)
             self.model_backward_and_update(loss)
+
+            if (self.epoch + 1) % self.soft_label_update_epoch ==  0:
+                if self.use_softlabel_dloss:
+                    novel_soft_label = F.softmax(domain_output, dim=1).detach().cpu()
+                    self.train_loader_x.dataset.update_softlabel(batch["index"], novel_soft_label)
+        
         
         if not self.cfg.NO_FORGET:
             loss_summary = {

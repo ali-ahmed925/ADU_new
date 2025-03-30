@@ -276,3 +276,16 @@ class DatasetWrapper(TorchDataset):
             img = img[0]
 
         return img
+    
+    def update_softlabel(self, idx: torch.Tensor, update_labels: torch.Tensor)->None:
+        # item = self.data_source[idx].soft_domain_label
+        for (idx, update_label) in zip(idx, update_labels):
+            self.data_source[idx].soft_domain_label = update_label
+        # item = self.data_source[idx]
+        # new_item = Datum_w_Soft(
+        #     label=item.label,
+        #     domain=item.domain,
+        #     impath=item.impath,
+        #     soft_domain_label=update_label
+        # )
+        # self.data_source[idx] = new_item
