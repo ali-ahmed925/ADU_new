@@ -15,11 +15,11 @@ DATASETSEED=${10}
 # true/false のフルアブレーション
 for data in $DATASET ;do
 #for ddl_loss_weight in 80.0 100.0 0.5 ;do
-for ddl_loss_weight in 0.01 0.1 0.5 5.0 10.0 20.0;do
+for ddl_loss_weight in 10.0;do
 for USE_DOMAIN_CLS_LOSS in true; do
     for USE_NEAREST_NEIGHBOR_LOSS in false; do
         for IS_DOMAIN_DIVIDED in false; do
-            for USE_CROSSATTENTION in false true; do
+            for USE_CROSSATTENTION in true; do
                 # サブエクスペリメント名の設定
                 # SUBEXPNAME=DC-${USE_DOMAIN_CLS_LOSS}_NN-${USE_NEAREST_NEIGHBOR_LOSS}_DIV-${IS_DOMAIN_DIVIDED}_InstPG${USE_CROSSATTENTION}
 
