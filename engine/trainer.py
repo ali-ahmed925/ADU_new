@@ -657,14 +657,13 @@ class TrainerDF(SimpleTrainer_):
 
                 cv2.imwrite(save_dir + f"{image_number[idx]}_{self.classnames[label[idx]]}_{self.domain_list[domain[idx]]}_original.png", cv2.cvtColor(original_image, cv2.COLOR_RGB2BGR))
                 cv2.imwrite(save_dir + f"{image_number[idx]}_{self.classnames[label[idx]]}_{self.domain_list[domain[idx]]}_attention_gt{label[idx]}_pr{precision}.png", cv2.cvtColor(superimposed_img, cv2.COLOR_RGB2BGR))
-                a = 0
     
     @torch.no_grad()
     def get_tsne_plots(self, split=None):
         self.set_model_mode("eval")
         self.evaluator.reset()
         data_loader = self.train_loader_x
-        data_loader = self.test_loader
+        # data_loader = self.test_loader
         # if split is None:
         #     split = self.cfg.TEST.SPLIT
 
