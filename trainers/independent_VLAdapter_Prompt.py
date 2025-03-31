@@ -40,15 +40,16 @@ def load_clip_to_cpu(cfg):
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
     design_details = {"trainer": 'IVLP_VL_Adapter_Prompt',
-                      "vision_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION,
-                      "language_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT, "vision_ctx": cfg.TRAINER.IVLP.N_CTX_VISION,
+                      "vision_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION, # VPTのPrompt Depthを表す
+                      "language_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT, 
+                      "vision_ctx": cfg.TRAINER.IVLP.N_CTX_VISION,
                       "language_ctx": cfg.TRAINER.IVLP.N_CTX_TEXT,
                       "add_linear": cfg.ADD_LINEAR,
-                      "use_classtoken": cfg.USE_CLASSTOKEN,
-                      "use_cross_attention": cfg.USE_CROSSATTENTION,
-                      "independent_cross_attention": cfg.INDEPENDENT_CROSS_ATTENTION,
-                      "independent_learnable_vision": cfg.INDEPENDENT_LEARNABLE_VISION,
-                      "insert_layer": cfg.INSERT_LAYER_ATTN
+                      "use_classtoken": cfg.USE_CLASSTOKEN, # InstaPGにPatch特徴を使うか (False), class token使うか (True)
+                      "use_cross_attention": cfg.USE_CROSSATTENTION,# InstaPG やるかやらないか
+                      "independent_cross_attention": cfg.INDEPENDENT_CROSS_ATTENTION, # InstaPGをinsert_layerまで全層に入れる
+                      "independent_learnable_vision": cfg.INDEPENDENT_LEARNABLE_VISION, # VPTの学習ベクトルを各層独立にするか共有するか
+                      "insert_layer": cfg.INSERT_LAYER_ATTN # InstaPGの挿入層を表す
                       }
     model = clip.build_model(state_dict or model.state_dict(), design_details)
 
