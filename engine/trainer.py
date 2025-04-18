@@ -397,7 +397,6 @@ class TrainerDF(SimpleTrainer_):
     #     self.after_train()
     
     def train_loop(self):
-        # def train(self):
         super().train()
         return self.metrics_dict
     
