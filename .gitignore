@@ -7,3 +7,5 @@ proj-vit-b16.pt
 ln_post_weight.pt
 *.csv
 *.png
+
+outputs/

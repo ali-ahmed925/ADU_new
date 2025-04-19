@@ -60,6 +60,50 @@ CUSTOM_TEMPLATES = {
     "ImageNetDF": "a photo of a {}"
 }
 
+def gaussian_kernel(x, y, sigma=1.0):
+    """
+    Computes the Gaussian RBF kernel between x and y.
+    x: [n_x, d]
+    y: [n_y, d]
+    """
+    x_norm = x.pow(2).sum(dim=1, keepdim=True)
+    y_norm = y.pow(2).sum(dim=1, keepdim=True)
+    dist = x_norm + y_norm.T - 2.0 * torch.mm(x, y.T)
+    return torch.exp(-dist / (2 * sigma ** 2))
+
+def mmd(x, y, kernel=gaussian_kernel):
+    """
+    Maximum Mean Discrepancy between two sets.
+    """
+    K_xx = kernel(x, x)
+    K_yy = kernel(y, y)
+    K_xy = kernel(x, y)
+    return K_xx.mean() + K_yy.mean() - 2 * K_xy.mean()
+
+def classwise_mmd_loss(z, y, kernel=gaussian_kernel):
+    """
+    Computes the average MMD between each pair of class distributions in the batch.
+    z: tensor of shape [B, D]
+    y: tensor of shape [B]
+    """
+    unique_classes = y.unique()
+    mmd_sum = 0.0
+    count = 0
+
+    for i in range(len(unique_classes)):
+        for j in range(i + 1, len(unique_classes)):
+            c1 = unique_classes[i]
+            c2 = unique_classes[j]
+            z1 = z[y == c1]
+            z2 = z[y == c2]
+            if len(z1) > 1 and len(z2) > 1:  # Avoid degenerate cases
+                mmd_val = mmd(z1, z2, kernel)
+                mmd_sum += mmd_val
+                count += 1
+
+    return mmd_sum / count if count > 0 else torch.tensor(0.0, device=z.device)
+
+
 def load_clip_to_cpu_expert(cfg):
     backbone_name = cfg.MODEL.BACKBONE.NAME
     url = clip._MODELS[backbone_name]
@@ -479,7 +523,7 @@ class TrainerDF(SimpleTrainer_):
                         pass
                         domain_cls_loss = F.kl_div(F.log_softmax(domain_output, dim=1), domain_soft_label, reduction="batchmean")
                     else :
-                        domain_cls_loss = F.cross_entropy(domain_output, target_label)
+                        domain_cls_loss = F.cross_entropy(domain_output, target_label) + classwise_mmd_loss(domain_output, target_label) * self.cfg.MMD_WEIGHT 
                     loss += self.ddl_loss_weight * domain_cls_loss
                 if self.use_nearest_neighbor_loss :
                     domain_nn_loss = self.nnl(img_feat, target_label)
