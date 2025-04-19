@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Move to the project root
-#cd ../../
-
 # 引数の取得
 CUDA_DEVICE=$1
 DATASET=office_home_df
@@ -26,6 +23,8 @@ for USE_DOMAIN_CLS_LOSS in true; do
     for USE_NEAREST_NEIGHBOR_LOSS in false; do
         for IS_DOMAIN_DIVIDED in true; do
             for USE_CROSSATTENTION in true; do
+            for DOMAIN_WEIGHT in 0.0 0.5 1.0 3.0 5.0 7.0 9.0 10.0 20.0 25.0 30.0; do
+            for MMD in 0.0 0.1 0.5 1.0 3.0 5.0 7.0 9.0 10.0; do
 
 
                 # 各フラグに対応するCLIオプションの設定
@@ -51,10 +50,10 @@ for USE_DOMAIN_CLS_LOSS in true; do
                 fi
 
                 # サブ実験名
-                SUBEXPNAME=Main
+                SUBEXPNAME=MMD
 
                 # 実行ディレクトリ
-                DIR=outputs/Result_Domain_Forgetting_Loop/${data}/IVLP_VL_Adapter_Prompt/SHOTS${SHOTS}/${CFG}/NCTX-${NCTX}_VISIONDEPTH-${DEPTH_VISION}_TEXTDEPTH-${DEPTH_TEXT}_VAdapter-${USE_VISION_ADAPTER}_TAdapter-${USE_TEXT_ADAPTER}
+                DIR=/nas/data/kawamura/outputs/domain_weight_${DOMAIN_WEIGHT}/mmd_weight_${MMD}/
 
                 echo "Run this job and save the output to ${DIR}"
 
@@ -72,6 +71,8 @@ for USE_DOMAIN_CLS_LOSS in true; do
                     --dataset_seed ${DATASETSEED} \
                     --experiment_name ${EXPNAME} \
                     --sub_experiment_name ${SUBEXPNAME} \
+                    --mmd_weight ${MMD} \
+                    --domainloss_weight ${DOMAIN_WEIGHT} \
                     ${IS_DOMAIN_DIVIDED_FLAG} \
                     ${USE_DOMAIN_CLS_LOSS_FLAG} \
                     ${USE_NEAREST_NEIGHBOR_LOSS_FLAG} \
@@ -84,8 +85,9 @@ for USE_DOMAIN_CLS_LOSS in true; do
                     USE_TEXT_ADAPTER ${USE_TEXT_ADAPTER} \
                     USE_VISION_ADAPTER ${USE_VISION_ADAPTER}
             done
+            done
+            done
         done
     done
 done
 done
-mai

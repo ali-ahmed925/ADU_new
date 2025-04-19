@@ -156,82 +156,62 @@ def extend_cfg(cfg, args):
     cfg.DATASET.SEED = args.dataset_seed
     cfg.BLOCK_SHUFFLE = args.is_block_shuffle
     cfg.GRID = args.grid_num
-    
     cfg.TOPK = args.topk
-
     cfg.ENTROPY_MASK = args.entropy_mask
     cfg.BLOCK_SHUFFLE_SELECTION = args.block_shuffle_selection
     cfg.BLOCK_SHUFFLE_SELECTION_NONEXP = args.block_shuffle_selection_nonexp
     cfg.MASKED_DC = args.masked_dc
     cfg.MASKED_NN = args.masked_nn
-
     cfg.NO_FORGET = args.no_forget
     cfg.EVAL_ONLY = args.eval_only
-
     cfg.LMD_DOMAIN_LOSS = args.lmd_domain_loss
-
     cfg.USE_DOMAIN_CLASIFIER_LOSS = args.use_domain_cls_loss
     cfg.USER_NEAREST_NEIGHBOR_LOSS = args.use_nearest_neighbor_loss
     cfg.DOMAIN_CLASS_DIVIDED = args.domain_class_divided
     cfg.IS_DOMAIN_DIVIDED = args.is_domain_divided
     cfg.CSV_FILE_PATH = args.csv_file_path
-
+    cfg.MMD_WEIGHT = args.mmd_weight 
     # cfg.USE_SOFT_LABEL_FOR_DLOSS = False
     cfg.SOFT_LABEL_UPDATE_EPOCH = 1
     cfg.USE_SOFT_DOMAIN_LABEL = False
     cfg.PREPROCESS_SOFT_LABEL = "Total" # Total or Class
     cfg.USE_KLDIV_PENALTY = None
     cfg.ONLY_KLDIV_FOR_PRV = False
-
     cfg.ADD_LINEAR = False
     cfg.USE_CLASSTOKEN = False
     cfg.USE_CROSSATTENTION = True
-
     cfg.USE_VISION_ADAPTER = False
     cfg.USE_TEXT_ADAPTER = False
-
     cfg.INDEPENDENT_CROSS_ATTENTION = False
     cfg.INDEPENDENT_LEARNABLE_VISION = True
-
     cfg.INSERT_LAYER_ATTN = 9
-
     cfg.USE_ORTHOGONAL_LOSS = False
-
-    cfg.DDL_LOSS_WEIGHT = 1.0 # これでDomain Classifierの損失の重みをとるようにしてね
-
+    cfg.DDL_LOSS_WEIGHT = args.domainloss_weight # これでDomain Classifierの損失の重みをとるようにしてね
     cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
     cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False
-
     cfg.TRAINER.ClipFit_DF = CN()
     cfg.TRAINER.ClipFit_DF.USE_KD = True
- 
     cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH = CN()
     cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.TOPK = 190
     cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.ONLY_MASKED = False
     cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.SELECT_METHOD = "block_shuffle_distill"
     cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.SELECT_LAYER = 9
-
     cfg.TRAINER.COOP_W_ADAPTER = CN()
-
     cfg.TRAINER.DOMAINCLS = CN()
     cfg.TRAINER.DOMAINCLS.PREC = "fp16" 
-
     cfg.TRAINER.COOP_W_DH = CN()
     cfg.TRAINER.COOP_W_DH.N_CTX = 16  # number of context vectors
     cfg.TRAINER.COOP_W_DH.CSC = False  # class-specific context
     cfg.TRAINER.COOP_W_DH.CTX_INIT = ""  # initialization words
     cfg.TRAINER.COOP_W_DH.PREC = "fp16"  # fp16, fp32, amp
     cfg.TRAINER.COOP_W_DH.CLASS_TOKEN_POSITION = "end"  # 'middle' or 'end' or 'front'
-
     cfg.TRAINER.COOP = CN()
     cfg.TRAINER.COOP.N_CTX = 16  # number of context vectors
     cfg.TRAINER.COOP.CSC = False  # class-specific context
     cfg.TRAINER.COOP.CTX_INIT = ""  # initialization words
     cfg.TRAINER.COOP.PREC = "fp16"  # fp16, fp32, amp
     cfg.TRAINER.COOP.CLASS_TOKEN_POSITION = "end"  # 'middle' or 'end' or 'front'
-
     cfg.TRAINER.CLIP_Adapter = CN()
-
     cfg.TRAINER.COCOOP = CN()
     cfg.TRAINER.COCOOP.N_CTX = 16  # number of context vectors
     cfg.TRAINER.COCOOP.CTX_INIT = ""  # initialization words
@@ -265,6 +245,7 @@ def extend_cfg(cfg, args):
     cfg.TRAINER.IVLP.N_CTX_TEXT = 2  # number of context vectors at the language branch
     cfg.TRAINER.IVLP.CTX_INIT = "a photo of a"  # initialization words (only for language prompts)
     cfg.TRAINER.IVLP.PREC = "fp16"  # fp16, fp32, amp
+
     # If both variables below are set to 0, 0, will the config will degenerate to COOP model
     cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION = 9  # Max 12, minimum 0, for 0 it will act as shallow IVLP prompting (J=1)
     cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT = 9  # Max 12, minimum 0, for 0 it will act as shallow IVLP prompting(J=1)
@@ -277,7 +258,6 @@ def extend_cfg(cfg, args):
     cfg.TRAINER.VPT.PREC = "fp16"  # fp16, fp32, amp
     cfg.TRAINER.VPT.PROMPT_DEPTH_VISION = 1  # if set to 1, will represent shallow vision prompting only
     cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
-
     cfg.TRAINER.CoOpDomainSpecific = CN()
     # cfg.TRAINER.CLIP_Adapter = CN()
 
@@ -395,136 +375,45 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=str, default="", help="path to dataset")
     parser.add_argument("--output-dir", type=str, default="", help="output directory")
-    parser.add_argument(
-        "--resume",
-        type=str,
-        default="",
-        help="checkpoint directory (from which the training resumes)",
-    )
-    parser.add_argument(
-        "--seed", type=int, default=-1, help="only positive value enables a fixed seed"
-    )
-    parser.add_argument(
-        "--source-domains", type=str, nargs="+", help="source domains for DA/DG"
-    )
-    parser.add_argument(
-        "--target-domains", type=str, nargs="+", help="target domains for DA/DG"
-    )
-    parser.add_argument(
-        "--transforms", type=str, nargs="+", help="data augmentation methods"
-    )
-    parser.add_argument(
-        "--config-file", type=str, default="", help="path to config file"
-    )
-    parser.add_argument(
-        "--dataset-config-file",
-        type=str,
-        default="",
-        help="path to config file for dataset setup",
-    )
+    parser.add_argument( "--resume", type=str, default="", help="checkpoint directory (from which the training resumes)",)
+    parser.add_argument( "--seed", type=int, default=-1, help="only positive value enables a fixed seed")
+    parser.add_argument( "--source-domains", type=str, nargs="+", help="source domains for DA/DG")
+    parser.add_argument( "--target-domains", type=str, nargs="+", help="target domains for DA/DG")
+    parser.add_argument( "--transforms", type=str, nargs="+", help="data augmentation methods")
+    parser.add_argument( "--config-file", type=str, default="", help="path to config file")
+    parser.add_argument( "--dataset-config-file", type=str, default="", help="path to config file for dataset setup",)
     parser.add_argument("--trainer", type=str, default="", help="name of trainer")
     parser.add_argument("--backbone", type=str, default="", help="name of CNN backbone")
     parser.add_argument("--head", type=str, default="", help="name of head")
     parser.add_argument("--eval-only", action="store_true", help="evaluation only")
-    parser.add_argument(
-        "--model-dir",
-        type=str,
-        default="",
-        help="load model from this directory for eval-only mode",
-    )
-    parser.add_argument(
-        "--load-epoch", type=int, help="load model weights at this epoch for evaluation"
-    )
-    parser.add_argument(
-        "--no-train", action="store_true", help="do not call trainer.train()"
-    )
-
-    parser.add_argument(
-        "--no_forget", action="store_true", help="ON/OFF domain forgetting mode default = False"
-    )
-
-    parser.add_argument(
-        "--is_block_shuffle", action="store_true", help="ON/OFF either block shuffled or not"
-    )
-    parser.add_argument(
-        "--grid_num", type=int, help="select grid number 1 < grid_num < 224 ??", default=8
-    )
-
-    parser.add_argument(
-        "--num_shots", type=int, default=-1
-    )
-    parser.add_argument(
-        "--forget_domains",
-        default=[],
-        nargs="*",
-        help="input forget domains like '--forget_domains domain1 domain2 ..' "
-    )
-
-    parser.add_argument(
-        "--block_shuffle_selection",
-        action="store_true", help="default is False"
-                        )
-
-    parser.add_argument(
-        "--block_shuffle_selection_nonexp",
-        action="store_true", help="default is False"
-                        )
-    parser.add_argument(
-        "--topk",
-        default=100,
-        type=int,
-        help="select local feat topk "
-    )
-
-    parser.add_argument(
-        "--domain_class_divided",
-        action="store_true", help="default is False"
-    )
-
-    parser.add_argument(
-        "--lmd_domain_loss",
-        type=float,
-        default=1.0
-    )
-
-    parser.add_argument(
-        "--use_domain_cls_loss", action="store_true", help="default is False"
-    )
-    parser.add_argument(
-        "--use_nearest_neighbor_loss", action="store_true"
-    )
-    parser.add_argument(
-        "--is_domain_divided", action="store_true", help="defult is False"
-    )
-
-    parser.add_argument(
-        "--entropy_mask", action="store_true", help="default is False"
-    )
-
-    parser.add_argument(
-        "--masked_dc", action="store_true", help="default is False"
-    )
-
-    parser.add_argument(
-        "--masked_nn", action="store_true", help="default is False"
-    )
-
+    parser.add_argument( "--model-dir", type=str, default="", help="load model from this directory for eval-only mode",)
+    parser.add_argument( "--load-epoch", type=int, help="load model weights at this epoch for evaluation")
+    parser.add_argument( "--no-train", action="store_true", help="do not call trainer.train()")
+    parser.add_argument( "--no_forget", action="store_true", help="ON/OFF domain forgetting mode default = False")
+    parser.add_argument( "--is_block_shuffle", action="store_true", help="ON/OFF either block shuffled or not")
+    parser.add_argument( "--grid_num", type=int, help="select grid number 1 < grid_num < 224 ??", default=8)
+    parser.add_argument( "--num_shots", type=int, default=-1)
+    parser.add_argument( "--forget_domains", default=[], nargs="*", help="input forget domains like '--forget_domains domain1 domain2 ..' ")
+    parser.add_argument( "--block_shuffle_selection", action="store_true", help="default is False")
+    parser.add_argument( "--block_shuffle_selection_nonexp", action="store_true", help="default is False")
+    parser.add_argument( "--topk", default=100, type=int, help="select local feat topk ")
+    parser.add_argument( "--domain_class_divided", action="store_true", help="default is False")
+    parser.add_argument( "--lmd_domain_loss", type=float, default=1.0)
+    parser.add_argument( "--use_domain_cls_loss", action="store_true", help="default is False")
+    parser.add_argument( "--use_nearest_neighbor_loss", action="store_true")
+    parser.add_argument( "--is_domain_divided", action="store_true", help="defult is False")
+    parser.add_argument( "--entropy_mask", action="store_true", help="default is False")
+    parser.add_argument( "--masked_dc", action="store_true", help="default is False")
+    parser.add_argument( "--masked_nn", action="store_true", help="default is False")
     parser.add_argument("--csv_file_path", type=str, default="default.csv")
-
     parser.add_argument("--dataset_name", type=str, default="")
-
     parser.add_argument("--experiment_name", type=str, default="exp")
-
     parser.add_argument("--sub_experiment_name", type=str, default="subexp")
-
     parser.add_argument("--dataset_seed", type=int, default=1)
-    
-    parser.add_argument(
-        "opts",
-        default=None,
-        nargs=argparse.REMAINDER,
-        help="modify config options using the command-line",
-    )
+    parser.add_argument("--domainloss_weight", type=float, default=0.0)
+    parser.add_argument("--mmd_weight", type=float, default=0.0)
+    parser.add_argument( "opts", default=None, nargs=argparse.REMAINDER, help="modify config options using the command-line",)
+
     args = parser.parse_args()
 
     forget_domain_lists, base_dict = get_loop_prepare(args.dataset_name)
