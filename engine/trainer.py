@@ -60,48 +60,97 @@ CUSTOM_TEMPLATES = {
     "ImageNetDF": "a photo of a {}"
 }
 
+def median_pairwise_distance(x, y):
+    """Heuristic: median of pairwise distances for sigma."""
+    with torch.no_grad():
+        pairwise_distances = torch.cdist(x, y, p=2)
+        return pairwise_distances.median()
+
+def median_sigma(x):
+    with torch.no_grad():
+        pairwise_dists = torch.cdist(x, x, p=2)
+        return pairwise_dists.median()
+
 def gaussian_kernel(x, y, sigma=1.0):
-    """
-    Computes the Gaussian RBF kernel between x and y.
-    x: [n_x, d]
-    y: [n_y, d]
-    """
-    x_norm = x.pow(2).sum(dim=1, keepdim=True)
-    y_norm = y.pow(2).sum(dim=1, keepdim=True)
-    dist = x_norm + y_norm.T - 2.0 * torch.mm(x, y.T)
+    """Compute the Gaussian (RBF) kernel between x and y."""
+    x_norm = x.pow(2).sum(1).view(-1, 1)
+    y_norm = y.pow(2).sum(1).view(1, -1)
+    dist = x_norm + y_norm - 2 * torch.mm(x, y.t())
     return torch.exp(-dist / (2 * sigma ** 2))
 
-def mmd(x, y, kernel=gaussian_kernel):
-    """
-    Maximum Mean Discrepancy between two sets.
-    """
-    K_xx = kernel(x, x)
-    K_yy = kernel(y, y)
-    K_xy = kernel(x, y)
-    return K_xx.mean() + K_yy.mean() - 2 * K_xy.mean()
+def mmd(x, y, sigma=1.0):
+    """Compute the Maximum Mean Discrepancy (MMD) between two samples."""
+    K_xx = gaussian_kernel(x, x, sigma)
+    K_yy = gaussian_kernel(y, y, sigma)
+    K_xy = gaussian_kernel(x, y, sigma)
+    m = x.size(0)
+    n = y.size(0)
 
-def classwise_mmd_loss(z, y, kernel=gaussian_kernel):
-    """
-    Computes the average MMD between each pair of class distributions in the batch.
-    z: tensor of shape [B, D]
-    y: tensor of shape [B]
-    """
-    unique_classes = y.unique()
-    mmd_sum = 0.0
+    mmd_val = K_xx.mean() + K_yy.mean() - 2 * K_xy.mean()
+    return mmd_val
+
+def total_pairwise_mmd(features, domain_labels, sigma=1.0):
+    """Compute total pairwise MMD across all domains."""
+    unique_domains = domain_labels.unique()
+    mmd_sum = 0
     count = 0
 
-    for i in range(len(unique_classes)):
-        for j in range(i + 1, len(unique_classes)):
-            c1 = unique_classes[i]
-            c2 = unique_classes[j]
-            z1 = z[y == c1]
-            z2 = z[y == c2]
-            if len(z1) > 1 and len(z2) > 1:  # Avoid degenerate cases
-                mmd_val = mmd(z1, z2, kernel)
+    for i in range(len(unique_domains)):
+        for j in range(i + 1, len(unique_domains)):
+            d1 = unique_domains[i]
+            d2 = unique_domains[j]
+            z1 = features[domain_labels == d1]
+            z2 = features[domain_labels == d2]
+
+            if z1.size(0) > 1 and z2.size(0) > 1:
+                sigma = median_pairwise_distance(z1, z2)
+                mmd_val = mmd(z1, z2, sigma)
                 mmd_sum += mmd_val
                 count += 1
 
-    return mmd_sum / count if count > 0 else torch.tensor(0.0, device=z.device)
+    return mmd_sum / count if count > 0 else torch.tensor(0.0, device=features.device)
+
+
+def linear_kernel(x):
+    return x @ x.t()
+
+def rbf_kernel(x, sigma=1.0):
+    x_norm = (x ** 2).sum(dim=1).view(-1, 1)
+    dist = x_norm + x_norm.t() - 2 * x @ x.t()
+    return torch.exp(-dist / (2 * sigma ** 2))
+
+def center_gram(K):
+    n = K.size(0)
+    dtype = K.dtype  # Match dtype
+    device = K.device
+    H = torch.eye(n, device=device, dtype=dtype) - torch.ones(n, n, device=device, dtype=dtype) / n
+    return H @ K @ H
+
+def hsic(features, domain_labels, kernel_x='rbf', kernel_y='linear', sigma=1.0):
+    """
+    HSIC between feature tensor and integer domain labels.
+
+    Args:
+        features: (N, D) tensor of features
+        domain_labels: (N,) tensor of integer domain labels
+        kernel_x: 'rbf' or 'linear' for features
+        kernel_y: 'rbf' or 'linear' for domain labels
+        sigma: bandwidth for RBF kernel
+    """
+    # Convert integer labels to one-hot encoding
+    num_classes = int(domain_labels.max().item()) + 1
+    domain_one_hot = F.one_hot(domain_labels, num_classes=num_classes).float()
+
+    # Compute kernels
+    K = rbf_kernel(features, sigma) if kernel_x == 'rbf' else linear_kernel(features)
+    L = rbf_kernel(domain_one_hot, sigma) if kernel_y == 'rbf' else linear_kernel(domain_one_hot)
+
+    # Center and compute HSIC
+    Kc = center_gram(K)
+    Lc = center_gram(L)
+    hsic_val = (Kc * Lc).sum() # / ((features.size(0) - 1) ** 2)
+    return hsic_val
+
 
 
 def load_clip_to_cpu_expert(cfg):
@@ -427,6 +476,8 @@ class TrainerDF(SimpleTrainer_):
             self.write_scalar("train/lr", self.get_current_lr(), n_iter)
 
             end = time.time()
+
+
     
     # def train(self, start_epoch, max_epoch):
     #     """Generic training loops."""
@@ -519,18 +570,19 @@ class TrainerDF(SimpleTrainer_):
                 #####################################################################
 
                 if self.use_domain_classifier_loss :
-                    if self.use_softlabel_dloss:
-                        pass
-                        domain_cls_loss = F.kl_div(F.log_softmax(domain_output, dim=1), domain_soft_label, reduction="batchmean")
-                    else :
-                        domain_cls_loss = F.cross_entropy(domain_output, target_label) + classwise_mmd_loss(domain_output, target_label) * self.cfg.MMD_WEIGHT 
-                    loss += self.ddl_loss_weight * domain_cls_loss
+                    #domain_cls_loss = F.cross_entropy(domain_output, target_label) * self.ddl_loss_weight
+                    domain_cls_loss = hsic(domain_output, target_label) * self.ddl_loss_weight* - total_pairwise_mmd(domain_output, target_label) * self.cfg.MMD_WEIGHT
+                    print(hsic(domain_output, target_label))
+                    print(total_pairwise_mmd(domain_output, target_label))
+
+                    loss += domain_cls_loss
                 if self.use_nearest_neighbor_loss :
                     domain_nn_loss = self.nnl(img_feat, target_label)
                     loss += domain_nn_loss
                 if self.use_orthogonal_loss:
                     domain_orthogonal_loss = orthogonality_loss(img_feat, target_label)
-                    loss += domain_orthogonal_loss
+                    loss += domain_orthogonal_loss 
+
                 # if self.kldiv_for_ddl_pena is not None:
                 #     if self.is_only_prv_for_kldiv:
                 #         img_feat_ = img_feat * img_feat.norm(dim=-1, keepdim=True)
@@ -558,6 +610,7 @@ class TrainerDF(SimpleTrainer_):
                 #     loss += domain_kl_div_loss
             else :
                 loss = F.cross_entropy(output, label)
+
             self.model_backward_and_update(loss)
 
             if (self.epoch + 1) % self.soft_label_update_epoch ==  0:
