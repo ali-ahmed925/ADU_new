@@ -295,8 +295,8 @@ def main(args):
         torch.backends.cudnn.benchmark = True
 
     print_args(args, cfg)
-    print("Collecting env info ...")
-    print("** System info **\n{}\n".format(collect_env_info()))
+    #print("Collecting env info ...")
+    #print("** System info **\n{}\n".format(collect_env_info()))
 
     trainer = build_trainer(cfg)
 
