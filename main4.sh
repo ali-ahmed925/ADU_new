@@ -23,7 +23,7 @@ for USE_DOMAIN_CLS_LOSS in true; do
     for USE_NEAREST_NEIGHBOR_LOSS in false; do
         for IS_DOMAIN_DIVIDED in true; do
             for USE_CROSSATTENTION in true; do
-            for DOMAIN_WEIGHT in 1.5 2.5 3.5 4.5 5.5 6.5 7.5; do
+            for DOMAIN_WEIGHT in 10 20 30 40 50; do
             for MMD in 0.0 0.1 0.5 1.0 3.0 5.0 7.0 9.0 10.0 15.0 20.0; do
 
 

@@ -572,7 +572,8 @@ class TrainerDF(SimpleTrainer_):
                 if self.use_domain_classifier_loss :
                     #domain_cls_loss = F.cross_entropy(domain_output, target_label) * self.ddl_loss_weight
                     mmd_loss = total_pairwise_mmd(domain_output.float(), target_label.float()) * self.cfg.MMD_WEIGHT
-                    domain_cls_loss = hsic(domain_output, target_label) * self.ddl_loss_weight - mmd_loss
+                    ddl = F.cross_entropy(domain_output, target_label) * self.ddl_loss_weight
+                    domain_cls_loss = ddl - mmd_loss
 
                     loss += domain_cls_loss
                 if self.use_nearest_neighbor_loss :
