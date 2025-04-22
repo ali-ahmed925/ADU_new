@@ -462,6 +462,7 @@ if __name__ == "__main__":
         pass
     
 
+    seed_list = [1,]
     results_dict = {}
     for seed in seed_list:
         # seed_list.append(seed)
