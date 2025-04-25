@@ -277,14 +277,6 @@ class CustomCLIP(nn.Module):
             text_features = self.text_encoder(prompts, tokenized_prompts)
         image_features, image_patch_features = self.image_encoder(image.type(self.dtype))
         image_patch_features = image_patch_features[:,0:image_patch_features.shape[1] - self.n_vision_context,:]
-        
-        # image_features = self.vision_adapter(image_features)
-        # text_features = self.text_adapter(text_features)
-        if self.use_vision_adapter:
-            image_features = self.vision_adapter(image_features)
-            image_patch_features = self.vision_adapter(image_patch_features)
-        if self.use_text_adapter:
-            text_features = self.text_adapter(text_features)
 
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
