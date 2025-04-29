@@ -2,7 +2,7 @@
 
 # 引数の取得
 CUDA_DEVICE=$1
-DATASET=imagenet_df
+DATASET=office_home_df
 SEED=1
 CFG=vit_b16_ep50
 NCTX=4
@@ -23,8 +23,8 @@ for USE_DOMAIN_CLS_LOSS in true; do
     for USE_NEAREST_NEIGHBOR_LOSS in false; do
         for IS_DOMAIN_DIVIDED in true; do
             for USE_CROSSATTENTION in true; do
-            for DOMAIN_WEIGHT in 1.0 5.0 10.0; do
-            for MMD in 0.0 1.0 3.0 5.0 10.0 15.0 20.0; do
+            for DOMAIN_WEIGHT in 30.0; do
+            for MMD in 0.0 10.0 20.0 30.0 50.0; do
 
                 # 各フラグに対応するCLIオプションの設定
                 IS_DOMAIN_DIVIDED_FLAG=""
@@ -52,7 +52,7 @@ for USE_DOMAIN_CLS_LOSS in true; do
                 SUBEXPNAME=MMD
 
                 # 実行ディレクトリ
-                DIR=outputs/imagenet/domain_weight_${DOMAIN_WEIGHT}/mmd_weight_${MMD}/
+                DIR=/nas/data/kawamura/ADU/domainnet/domain_weight_${DOMAIN_WEIGHT}/mmd_weight_${MMD}/
 
                 echo "Run this job and save the output to ${DIR}"
 
