@@ -52,7 +52,7 @@ for USE_DOMAIN_CLS_LOSS in true; do
                 SUBEXPNAME=MMD
 
                 # 実行ディレクトリ
-                DIR=/nas/data/kawamura/ADU/domainnet/domain_weight_${DOMAIN_WEIGHT}/mmd_weight_${MMD}/
+                DIR=/nas/data/kawamura/ADU/domain_weight_${DOMAIN_WEIGHT}/mmd_weight_${MMD}/
 
                 echo "Run this job and save the output to ${DIR}"
 
