@@ -171,6 +171,8 @@ def extend_cfg(cfg, args):
     cfg.IS_DOMAIN_DIVIDED = args.is_domain_divided
     cfg.CSV_FILE_PATH = args.csv_file_path
     cfg.MMD_WEIGHT = args.mmd_weight 
+    cfg.DROP_RATE = args.drop_rate
+    cfg.DROP_DOMAIN_IDX = args.drop_domain_idx
     # cfg.USE_SOFT_LABEL_FOR_DLOSS = False
     cfg.SOFT_LABEL_UPDATE_EPOCH = 1
     cfg.USE_SOFT_DOMAIN_LABEL = False
@@ -307,6 +309,7 @@ def main(args):
 
     if not args.no_train:
         results = trainer.train_loop()
+        trainer.get_tsne_plots()
         return results
     
 def get_loop_prepare(datasetname: str)->Tuple[List[str], Dict]:
@@ -412,6 +415,8 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_seed", type=int, default=1)
     parser.add_argument("--domainloss_weight", type=float, default=0.0)
     parser.add_argument("--mmd_weight", type=float, default=0.0)
+    parser.add_argument("--drop_rate", type=float, default=0.0)
+    parser.add_argument("--drop_domain_idx", type=int, default=10)
     parser.add_argument( "opts", default=None, nargs=argparse.REMAINDER, help="modify config options using the command-line",)
 
     args = parser.parse_args()

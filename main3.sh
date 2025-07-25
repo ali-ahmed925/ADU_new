@@ -23,8 +23,8 @@ for USE_DOMAIN_CLS_LOSS in true; do
     for USE_NEAREST_NEIGHBOR_LOSS in false; do
         for IS_DOMAIN_DIVIDED in true; do
             for USE_CROSSATTENTION in true; do
-            for DOMAIN_WEIGHT in 100.0; do
-            for MMD in 0.0 10.0 20.0 30.0 50.0; do
+            for DOMAIN_WEIGHT in 0.0 ; do
+            for MMD in 30.0 ; do
 
 
                 # 各フラグに対応するCLIオプションの設定

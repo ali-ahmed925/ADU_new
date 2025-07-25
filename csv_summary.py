@@ -3,8 +3,8 @@ import pandas as pd
 from itertools import product
 
 # Set weights and base path
-domain_weights = [0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 25.0]
-mmd_weights = [0.0, 1.0, 3.0, 5.0, 10.0, 15.0, 20.0]
+domain_weights = [0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0 ]
+mmd_weights = [0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 20.0, 30.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]
 base_path = "/nas/data/kawamura/ADU"
 
 # Initialize tables for F values from each Forgetdomain
@@ -27,9 +27,9 @@ for dw, mw in product(domain_weights, mmd_weights):
 
         # Extract F values (index: H, A, F → step of 3, starting from 2)
         f_values = {
-            "Forgetdomain1": float(values[4]),  # H,A,F -> index 4 is F
-            "Forgetdomain2": float(values[7]),
-            "Forgetdomain3": float(values[10]),
+            "Forgetdomain1": float(values[2]),  # H,A,F -> index 4 is F
+            "Forgetdomain2": float(values[5]),
+            "Forgetdomain3": float(values[8]),
         }
 
         for domain, f in f_values.items():

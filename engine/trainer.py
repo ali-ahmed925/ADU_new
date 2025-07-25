@@ -527,12 +527,30 @@ class TrainerDF(SimpleTrainer_):
                 # preservation loss
                 # deletion loss
                 ############################################
-                # for prv_domain in prv_domain_list:
+
+                
                 prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
                 prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
-                # for del_domain in del_domain_list:
+
                 del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
                 del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+
+                drop_rate = self.cfg.DROP_RATE
+                drop_domain_idx = self.cfg.DROP_DOMAIN_IDX
+                
+                # 1. Identify indices where domain == 1
+                domain_1_mask = domain == drop_domain_idx
+                domain_1_indices = torch.nonzero(domain_1_mask, as_tuple=False).squeeze()
+
+                # 2. Randomly select drop_rate of those indices
+                num_to_mask = int(drop_rate * domain_1_indices.numel())
+                selected_indices = domain_1_indices[torch.randperm(domain_1_indices.numel())[:num_to_mask]]
+
+                # 3. Create a mask that is True everywhere except selected positions
+                prob_mask = torch.ones_like(domain, dtype=torch.bool)
+                prob_mask[selected_indices] = False  # Set ~50% of domain==1 to False
+                prv_domain_mask = prv_domain_mask & prob_mask
+                del_domain_mask = del_domain_mask & prob_mask
                 
                 if torch.equal(false_check_tensor, prv_domain_mask):
                     loss_prv = 0
@@ -573,7 +591,7 @@ class TrainerDF(SimpleTrainer_):
                     #domain_cls_loss = F.cross_entropy(domain_output, target_label) * self.ddl_loss_weight
                     mmd_loss = total_pairwise_mmd(domain_output.float(), target_label.float()) * self.cfg.MMD_WEIGHT
                     ddl = F.cross_entropy(domain_output, target_label) * self.ddl_loss_weight
-                    domain_cls_loss = ddl - mmd_loss
+                    domain_cls_loss = ddl + mmd_loss
 
                     loss += domain_cls_loss
                 if self.use_nearest_neighbor_loss :
@@ -898,10 +916,9 @@ class TrainerDF(SimpleTrainer_):
                 output, img_feat, txt_feat, output_patch = self.model_inference(input)
             self.evaluator.process(output, label)
 
-            # for prv_domain in prv_domain_list:
             prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
             prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
-            # for del_domain in del_domain_list:
+            
             del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
             del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
             if self.domain_class_divided :

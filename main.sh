@@ -20,9 +20,9 @@ USE_TEXT_ADAPTER=False
 
 #　頻繁に変えるargs
 EXPNAME=rebuttal
-SUBEXPNAME=imbalanced_domain
+SUBEXPNAME=test
 
-DOMAIN_WEIGHT=30
+DOMAIN_WEIGHT=20
 MMD=0.5
 BASELINE=False
 ## imbalanced_domain labels

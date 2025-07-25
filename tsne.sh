@@ -23,9 +23,7 @@ for USE_DOMAIN_CLS_LOSS in true; do
     for USE_NEAREST_NEIGHBOR_LOSS in false; do
         for IS_DOMAIN_DIVIDED in true; do
             for USE_CROSSATTENTION in true; do
-            for DOMAIN_WEIGHT in 70.0 80.0 90.0 100.0; do
-            for MMD in 10.0 ; do
-
+            for DOMAIN_WEIGHT in 0.0; do
 
                 # 各フラグに対応するCLIオプションの設定
                 IS_DOMAIN_DIVIDED_FLAG=""
@@ -58,7 +56,7 @@ for USE_DOMAIN_CLS_LOSS in true; do
                 echo "Run this job and save the output to ${DIR}"
 
                 # 実行コマンド
-                CUDA_VISIBLE_DEVICES=${CUDA_DEVICE} python train_loop.py \
+                CUDA_VISIBLE_DEVICES=${CUDA_DEVICE} python main_tsne.py \
                     --root /nas/data/gotoyuta/Dataset/ \
                     --seed ${SEED} \
                     --trainer ${TRAINER}  \
@@ -71,8 +69,6 @@ for USE_DOMAIN_CLS_LOSS in true; do
                     --dataset_seed ${DATASETSEED} \
                     --experiment_name ${EXPNAME} \
                     --sub_experiment_name ${SUBEXPNAME} \
-                    --mmd_weight ${MMD} \
-                    --domainloss_weight ${DOMAIN_WEIGHT} \
                     ${IS_DOMAIN_DIVIDED_FLAG} \
                     ${USE_DOMAIN_CLS_LOSS_FLAG} \
                     ${USE_NEAREST_NEIGHBOR_LOSS_FLAG} \
@@ -85,9 +81,8 @@ for USE_DOMAIN_CLS_LOSS in true; do
                     USE_TEXT_ADAPTER ${USE_TEXT_ADAPTER} \
                     USE_VISION_ADAPTER ${USE_VISION_ADAPTER}
             done
-            done
-            done
         done
     done
+done
 done
 done
