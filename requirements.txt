@@ -1,3 +1,8 @@
 ftfy==6.1.1
 regex
 tqdm
+setuptools==59.5.0
+opencv-python
+matplotlib
+einops
+segment_anything

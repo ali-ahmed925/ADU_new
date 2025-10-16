@@ -26,7 +26,6 @@ from engine.trainer import TrainerDF
 
 _tokenizer = _Tokenizer()
 
-
 def load_clip_to_cpu(cfg):
     backbone_name = cfg.MODEL.BACKBONE.NAME
     url = clip._MODELS[backbone_name]
@@ -73,17 +72,10 @@ class FixedEmbeddings():
             root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
             dataset_dir = osp.join(root, "office_home_dg")
             embedding_file = dataset_dir + "/a_photo_of_a_cls.pt"
-            
-
         elif cfg.DATASET.NAME == "DomainNetMiniDF":
             embedding_file = "/home/gotoyuta/lab/Dataset/domainnet/a_photo_of_a_cls.pt"
         elif cfg.DATASET.NAME == "ImageNetDF":
             embedding_file = "/home/gotoyuta/lab/Dataset/IMAGENET/a_photo_of_a_cls.pt"
-        elif cfg.DATASET.NAME == "PACSDF":
-            root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
-            dataset_dir = osp.join(root, "pacs")
-            embedding_file = dataset_dir + "/a_photo_of_a_cls.pt"
-
 
         if osp.exists(embedding_file):
             print(f"Loading text features from {embedding_file}")
@@ -118,8 +110,6 @@ class TextEncoder(nn.Module):
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.ln_final(x).type(self.dtype)
 
-        # x.shape = [batch_size, n_ctx, transformer.width]
-        # take features from the eot embedding (eot_token is the highest number in each sequence)
         x = x[torch.arange(x.shape[0]), tokenized_prompts.argmax(dim=-1)] @ self.text_projection
 
         return x
@@ -217,48 +207,21 @@ class VLPromptLearner(nn.Module):
 class CustomCLIP(nn.Module):
     def __init__(self, cfg, classnames, clip_model):
         super().__init__()
-        if cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT == 0:
-            self.embeddings = FixedEmbeddings(cfg, classnames, clip_model)
-        else :
-            self.prompt_learner = VLPromptLearner(cfg, classnames, clip_model)
-            self.tokenized_prompts = self.prompt_learner.tokenized_prompts
-            self.text_encoder = TextEncoder(clip_model)
-        # self.prompt_learner = VLPromptLearner(cfg, classnames, clip_model)
-        # self.tokenized_prompts = self.prompt_learner.tokenized_prompts
+        self.prompt_learner = VLPromptLearner(cfg, classnames, clip_model)
+        self.tokenized_prompts = self.prompt_learner.tokenized_prompts
+        self.text_encoder = TextEncoder(clip_model)
         self.image_encoder = clip_model.visual
-        # self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
-        self.use_vision_adapter = cfg.USE_VISION_ADAPTER
-        self.use_text_adapter = cfg.USE_TEXT_ADAPTER
-        if self.use_vision_adapter:
-            self.vision_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        if self.use_text_adapter:
-            self.text_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        # self.vision_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        # self.text_adapter = Adapter(self.image_encoder.output_dim, clip_model.dtype)
-        if cfg.USE_DOMAIN_CLASIFIER_LOSS:
-            if cfg.DOMAIN_CLASS_DIVIDED:
-                if cfg.IS_DOMAIN_DIVIDED:
-                    if cfg.DATASET.NAME == "Office31DF":
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3*len(classnames))
-                    elif cfg.DATASET.NAME == "ImageNetDF" :
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
-                    else:
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
-                else :
-                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
-            else :
-                if cfg.IS_DOMAIN_DIVIDED:
-                    if cfg.DATASET.NAME == "Office31DF":
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 3)
-                    elif cfg.DATASET.NAME == "ImageNetDF" :
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
-                    else :
-                        self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
-                else :
-                    self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
-            self.domain_classifier.to(self.dtype)
+
+        if cfg.DATASET.NAME == "ImageNetDF" :
+            self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
+        elif cfg.DATASET.NAME == "DomainNetDF" :
+            self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 6*len(classnames))
+        else:
+            self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
+
+        self.domain_classifier.to(self.dtype)
         self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
         self.text_depth = cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT 
         self.n_vision_context = cfg.TRAINER.IVLP.N_CTX_VISION
@@ -288,8 +251,6 @@ class CustomCLIP(nn.Module):
         if self.use_domain_cls_loss:
             domain_logit = self.domain_classifier(image_features)
             return logits, image_features, text_features, domain_logit, logits_patch
-        # if self.prompt_learner.training:
-        #     return F.cross_entropy(logits, label)
 
         return logits, image_features, text_features, logits_patch
 
@@ -328,7 +289,6 @@ class IVLP_VL_Adapter_Prompt(TrainerDF):
         print("Building custom CLIP")
         self.model = CustomCLIP(cfg, classnames, clip_model)
 
-        print("Turning off gradients in both the image and the text encoder")
         name_to_update = "prompt_learner"
 
         for name, param in self.model.named_parameters():

@@ -1,47 +1,50 @@
-# Domain Forgetting
+# Approximate Domain Unlearning for Vision-Language Models (NeurIPS 2025 Spotlight)
+
+## Overview
+This is the official code repository for the paper [Approximate Domain Unlearning for Vision-Language Models](https://kodaikawamura.github.io/Domain_Unlearning/) accepted at NeurIPS 2025 as a spotlight.
 
 ## Installation 
-For installation and other package requirements, please follow the instructions detailed in [INSTALL.md](docs/INSTALL.md). 
+* Setup conda environment (recommended).
 
-## Data Preparation
-Please follow the instructions at [DATASETS.md](docs/DATASETS.md) to prepare all datasets.
+```bash
+# Create a conda environment
+conda env create -f environment.yml
 
-## Model Zoo
+# Activate the environment
+conda activate adu
 
-### Vision-Language prompting methods
-| Name  (configs)                                                                       |                                                             Model checkpoints                                                             |
-|---------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------:|
-| [Independent V-L Prompting](configs/trainers/IVLP/vit_b16_c2_ep20_batch4_4+4ctx.yaml) | [link](https://mbzuaiac-my.sharepoint.com/:f:/g/personal/syed_wasim_mbzuai_ac_ae/EuIwh-yMh_JBqB2Y_o8Jl14BPDKDRHC0JBPE1BugIeZiSQ?e=AJ8MhY) |
-| [PromptSRC](configs/trainers/PromptSRC/vit_b16_c2_ep20_batch4_4+4ctx.yaml)            | [link](https://mbzuaiac-my.sharepoint.com/:f:/g/personal/syed_wasim_mbzuai_ac_ae/EqFXPs2Zl9pKp39w3SqlR7QBDACTv-AgCXH6_cGflrUFwg?e=l33EBA) |
-
-
-## Evaluation 
-Please refer to the [EVAL.md](docs/EVAL.md) for detailed instructions on using the evaluation scripts and reproducing the official results using our pre-trained models.
-
-## Training 
-Please refer to the [TRAIN.md](docs/TRAIN.md) for detailed instructions on training PromptSRC and IVLP baseline from scratch.
-
-
-<hr />
-
-## Citation
-If you find our work, this repository, or pretrained models useful, please consider giving a star :star: and citation.
-```bibtex
-@InProceedings{Khattak_2023_ICCV,
-    author    = {Khattak, Muhammad Uzair and Wasim, Syed Talal and Naseer, Muzammal and Khan, Salman and Yang, Ming-Hsuan and Khan, Fahad Shahbaz},
-    title     = {Self-regulating Prompts: Foundational Model Adaptation without Forgetting},
-    booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
-    month     = {October},
-    year      = {2023},
-    pages     = {15190-15200}
-}
+# Install torch (requires version >= 1.8.1) and torchvision
+# Please refer to https://pytorch.org/ if you need a different cuda version
+pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 --index-url https://download.pytorch.org/whl/cu124
 ```
 
-## Contact
-If you have any questions, please create an issue on this repository or contact at uzair.khattak@mbzuai.ac.ae or syed.wasim@mbzuai.ac.ae.
+* Install dassl library.
+```bash
+# Instructions borrowed from https://github.com/KaiyangZhou/Dassl.pytorch#installation
+
+# Clone this repo
+git clone https://github.com/KaiyangZhou/Dassl.pytorch.git
+cd Dassl.pytorch/
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install this library (no need to re-build if the source code is modified)
+python setup.py develop
+cd ..
+```
+
+* Install requirements
+```bash
+# Install requirements
+
+pip install -r requirements.txt
+
+```
+
+## Data Preparation
 
 
-## Acknowledgements
-
-Our code is based on [MaPLe](https://github.com/muzairkhattak/multimodal-prompt-learning), along with [Co-CoOp and CoOp](https://github.com/KaiyangZhou/CoOp) repository. We thank the authors for releasing their code. If you use our model and code, please consider citing these works as well.
+## How to Run
+You can run the training and evaluation using the provided `main.sh <GPU_ID>` script. Please modify the parameters in the script as needed.
 

@@ -4,8 +4,6 @@ import pickle
 from dassl.data.datasets import DATASET_REGISTRY, Datum, DatasetBase
 # from dassl.utils import mkdir_if_missing
 from dassl.utils import read_json, write_json, mkdir_if_missing
-from .oxford_pets import OxfordPets
-from .dtd import DescribableTextures as DTD
 from typing import List
 import os.path as osp
 import random
