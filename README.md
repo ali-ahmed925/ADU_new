@@ -42,9 +42,6 @@ pip install -r requirements.txt
 
 ```
 
-## Data Preparation
-
-
 ## How to Run
 You can run the training and evaluation using the provided `main.sh <GPU_ID>` script. Please modify the parameters in the script as needed.
 

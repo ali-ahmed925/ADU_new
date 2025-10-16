@@ -44,7 +44,7 @@ class DomainNetMiniDF(DatasetBase):
     ]
 
     def __init__(self, cfg):
-        root = osp.abspath(osp.expanduser("/nas/data/gotoyuta/Dataset"))
+        root = osp.abspath(osp.expanduser("/data"))
         self.dataset_dir = osp.join(root, self.dataset_dir)
         self.split_dir = osp.join(self.dataset_dir, "splits_mini")
 

@@ -36,7 +36,6 @@ else
     USE_CROSSATTENTION_FLAG="False"  # InstaPG
 fi
 
-# 実行ディレクトリ
 DIR=/nas/data/kawamura/ADU/${EXPNAME}/${SUBEXPNAME}/${DATASET}/
 
 echo "Run this job and save the output to ${DIR}"
@@ -47,13 +46,10 @@ CUDA_VISIBLE_DEVICES=${CUDA_DEVICE} python train_loop.py \
     --seed ${SEED} \
     --trainer ${TRAINER}  \
     --dataset-config-file configs/datasets/${DATASET}.yaml \
-    --config-file configs/trainers/IVLP/${CFG}.yaml \
-    --forget_domains "${DOMAIN_LIST[@]}" \
+    --config-file configs/trainers/${CFG}.yaml \
     --output-dir ${DIR} \
     --num_shots ${SHOTS} \
     --dataset_name ${DATASET} \
-    --experiment_name ${EXPNAME} \
-    --sub_experiment_name ${SUBEXPNAME} \
     --mmd_weight ${MMD} \
     --domainloss_weight ${DOMAIN_WEIGHT} \
     --is_domain_divided \

@@ -219,30 +219,12 @@ class DatasetWrapper(TorchDataset):
 
     def __getitem__(self, idx):
         item = self.data_source[idx]
-        if self.cfg.USE_SOFT_DOMAIN_LABEL:
-            if self.is_train:
-                output = {
-                    "label": item.label,
-                    "domain": item.domain,
-                    "impath": item.impath,
-                    "index": idx,
-                    "soft_domain_label": item.soft_domain_label
-                }
-            else:
-                output = {
-                    "label": item.label,
-                    "domain": item.domain,
-                    "impath": item.impath,
-                    "index": idx,
-                }
-        else:
-            output = {
-                "label": item.label,
-                "domain": item.domain,
-                "impath": item.impath,
-                "index": idx,
-            }
-            
+        output = {
+            "label": item.label,
+            "domain": item.domain,
+            "impath": item.impath,
+            "index": idx,
+        }
 
         img0 = read_image(item.impath)
 
@@ -277,15 +259,3 @@ class DatasetWrapper(TorchDataset):
 
         return img
     
-    def update_softlabel(self, idx: torch.Tensor, update_labels: torch.Tensor)->None:
-        # item = self.data_source[idx].soft_domain_label
-        for (idx, update_label) in zip(idx, update_labels):
-            self.data_source[idx].soft_domain_label = update_label
-        # item = self.data_source[idx]
-        # new_item = Datum_w_Soft(
-        #     label=item.label,
-        #     domain=item.domain,
-        #     impath=item.impath,
-        #     soft_domain_label=update_label
-        # )
-        # self.data_source[idx] = new_item

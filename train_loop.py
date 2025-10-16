@@ -92,18 +92,11 @@ def extend_cfg(cfg, args):
         # print(cfg.DATASET.FORGETDOMAINS)
     cfg.EVAL_ONLY = args.eval_only
     cfg.DATASET.SEED = args.seed
-    cfg.LMD_DOMAIN_LOSS = args.lmd_domain_loss
     cfg.USE_DOMAIN_CLASIFIER_LOSS = args.use_domain_cls_loss
-    cfg.DOMAIN_CLASS_DIVIDED = args.domain_class_divided
     cfg.IS_DOMAIN_DIVIDED = args.is_domain_divided
     cfg.CSV_FILE_PATH = args.csv_file_path
     cfg.MMD_WEIGHT = args.mmd_weight 
     cfg.SOFT_LABEL_UPDATE_EPOCH = 1
-    cfg.USE_SOFT_DOMAIN_LABEL = False
-    cfg.PREPROCESS_SOFT_LABEL = "Total" # Total or Class
-    cfg.USE_KLDIV_PENALTY = None
-    cfg.ONLY_KLDIV_FOR_PRV = False
-    cfg.ADD_LINEAR = False
     cfg.USE_CLASSTOKEN = False
     cfg.USE_CROSSATTENTION = True
     cfg.USE_VISION_ADAPTER = False
@@ -111,59 +104,7 @@ def extend_cfg(cfg, args):
     cfg.INDEPENDENT_CROSS_ATTENTION = False
     cfg.INDEPENDENT_LEARNABLE_VISION = True
     cfg.INSERT_LAYER_ATTN = 9
-    cfg.USE_ORTHOGONAL_LOSS = False
-    cfg.DDL_LOSS_WEIGHT = args.domainloss_weight # これでDomain Classifierの損失の重みをとるようにしてね
-    cfg.TRAINER.IVLP_VL_Adapter_Local = CN()
-    cfg.TRAINER.IVLP_VL_Adapter_Local.BLOCK_SHUFFLE_SELECT_NON_EXPERT = False
-    cfg.TRAINER.ClipFit_DF = CN()
-    cfg.TRAINER.ClipFit_DF.USE_KD = True
-    cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH = CN()
-    cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.TOPK = 190
-    cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.ONLY_MASKED = False
-    cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.SELECT_METHOD = "block_shuffle_distill"
-    cfg.TRAINER.IVLP_VLADAPTER_LOCAL_SELECTPATCH.SELECT_LAYER = 9
-    cfg.TRAINER.COOP_W_ADAPTER = CN()
-    cfg.TRAINER.DOMAINCLS = CN()
-    cfg.TRAINER.DOMAINCLS.PREC = "fp16" 
-    cfg.TRAINER.COOP_W_DH = CN()
-    cfg.TRAINER.COOP_W_DH.N_CTX = 16  # number of context vectors
-    cfg.TRAINER.COOP_W_DH.CSC = False  # class-specific context
-    cfg.TRAINER.COOP_W_DH.CTX_INIT = ""  # initialization words
-    cfg.TRAINER.COOP_W_DH.PREC = "fp16"  # fp16, fp32, amp
-    cfg.TRAINER.COOP_W_DH.CLASS_TOKEN_POSITION = "end"  # 'middle' or 'end' or 'front'
-    cfg.TRAINER.COOP = CN()
-    cfg.TRAINER.COOP.N_CTX = 16  # number of context vectors
-    cfg.TRAINER.COOP.CSC = False  # class-specific context
-    cfg.TRAINER.COOP.CTX_INIT = ""  # initialization words
-    cfg.TRAINER.COOP.PREC = "fp16"  # fp16, fp32, amp
-    cfg.TRAINER.COOP.CLASS_TOKEN_POSITION = "end"  # 'middle' or 'end' or 'front'
-    cfg.TRAINER.CLIP_Adapter = CN()
-    cfg.TRAINER.COCOOP = CN()
-    cfg.TRAINER.COCOOP.N_CTX = 16  # number of context vectors
-    cfg.TRAINER.COCOOP.CTX_INIT = ""  # initialization words
-    cfg.TRAINER.COCOOP.PREC = "fp16"  # fp16, fp32, amp
-
-    # Config for MaPLe
-    cfg.TRAINER.MAPLE = CN()
-    cfg.TRAINER.MAPLE.N_CTX = 2  # number of context vectors
-    cfg.TRAINER.MAPLE.CTX_INIT = "a photo of a"  # initialization words
-    cfg.TRAINER.MAPLE.PREC = "fp16"  # fp16, fp32, amp
-    cfg.TRAINER.MAPLE.PROMPT_DEPTH = 9  # Max 12, minimum 0, for 1 it will act as shallow MaPLe (J=1)
-    cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
-
-    # Config for PromptSRC
-    cfg.TRAINER.PROMPTSRC = CN()
-    cfg.TRAINER.PROMPTSRC.N_CTX_VISION = 4  # number of context vectors at the vision branch
-    cfg.TRAINER.PROMPTSRC.N_CTX_TEXT = 4  # number of context vectors at the language branch
-    cfg.TRAINER.PROMPTSRC.CTX_INIT = "a photo of a"  # initialization words
-    cfg.TRAINER.PROMPTSRC.PREC = "fp16"  # fp16, fp32, amp
-    cfg.TRAINER.PROMPTSRC.PROMPT_DEPTH_VISION = 9  # Max 12, minimum 0, for 0 it will be using shallow IVLP prompting (J=1)
-    cfg.TRAINER.PROMPTSRC.PROMPT_DEPTH_TEXT = 9  # Max 12, minimum 0, for 0 it will be using shallow IVLP prompting (J=1)
-    cfg.TRAINER.PROMPTSRC.TEXT_LOSS_WEIGHT = 25
-    cfg.TRAINER.PROMPTSRC.IMAGE_LOSS_WEIGHT = 10
-    cfg.TRAINER.PROMPTSRC.GPA_MEAN = 15
-    cfg.TRAINER.PROMPTSRC.GPA_STD = 1
-    cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
+    cfg.DDL_LOSS_WEIGHT = args.domainloss_weight 
 
     # Config for independent Vision Language prompting (independent-vlp)
     cfg.TRAINER.IVLP = CN()
@@ -176,16 +117,6 @@ def extend_cfg(cfg, args):
     cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION = 9  # Max 12, minimum 0, for 0 it will act as shallow IVLP prompting (J=1)
     cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT = 9  # Max 12, minimum 0, for 0 it will act as shallow IVLP prompting(J=1)
     cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
-
-    # Config for only vision side prompting MaPLEの実装から流用
-    cfg.TRAINER.VPT = CN()
-    cfg.TRAINER.VPT.N_CTX_VISION = 8  # number of context vectors at the vision branch
-    cfg.TRAINER.VPT.CTX_INIT = "a photo of a"  # initialization words
-    cfg.TRAINER.VPT.PREC = "fp16"  # fp16, fp32, amp
-    cfg.TRAINER.VPT.PROMPT_DEPTH_VISION = 1  # if set to 1, will represent shallow vision prompting only
-    cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
-    cfg.TRAINER.CoOpDomainSpecific = CN()
-    # cfg.TRAINER.CLIP_Adapter = CN()
 
 def setup_cfg(args):
     cfg = get_cfg_default()
@@ -299,17 +230,12 @@ if __name__ == "__main__":
     parser.add_argument( "--no-train", action="store_true", help="do not call trainer.train()")
     parser.add_argument( "--num_shots", type=int, default=-1)
     parser.add_argument( "--forget_domains", default=[], nargs="*", help="input forget domains like '--forget_domains domain1 domain2 ..' ")
-    parser.add_argument( "--block_shuffle_selection", action="store_true", help="default is False")
-    parser.add_argument( "--block_shuffle_selection_nonexp", action="store_true", help="default is False")
-    parser.add_argument( "--topk", default=100, type=int, help="select local feat topk ")
     parser.add_argument( "--domain_class_divided", action="store_true", help="default is False")
     parser.add_argument( "--lmd_domain_loss", type=float, default=1.0)
     parser.add_argument( "--use_domain_cls_loss", action="store_true", help="default is False")
     parser.add_argument( "--is_domain_divided", action="store_true", help="defult is False")
     parser.add_argument( "--csv_file_path", type=str, default="default.csv")
     parser.add_argument( "--dataset_name", type=str, default="")
-    parser.add_argument( "--experiment_name", type=str, default="exp")
-    parser.add_argument( "--sub_experiment_name", type=str, default="subexp")
     parser.add_argument( "--domainloss_weight", type=float, default=0.0)
     parser.add_argument( "--mmd_weight", type=float, default=0.0)
     parser.add_argument( "opts", default=None, nargs=argparse.REMAINDER, help="modify config options using the command-line",)

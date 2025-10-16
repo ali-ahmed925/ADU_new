@@ -43,7 +43,6 @@ def load_clip_to_cpu(cfg):
                       "language_depth": cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT, 
                       "vision_ctx": cfg.TRAINER.IVLP.N_CTX_VISION,
                       "language_ctx": cfg.TRAINER.IVLP.N_CTX_TEXT,
-                      "add_linear": cfg.ADD_LINEAR,
                       "use_classtoken": cfg.USE_CLASSTOKEN, # InstaPGにPatch特徴を使うか (False), class token使うか (True)
                       "use_cross_attention": cfg.USE_CROSSATTENTION,# InstaPG やるかやらないか
                       "independent_cross_attention": cfg.INDEPENDENT_CROSS_ATTENTION, # InstaPGをinsert_layerまで全層に入れる
@@ -72,10 +71,6 @@ class FixedEmbeddings():
             root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
             dataset_dir = osp.join(root, "office_home_dg")
             embedding_file = dataset_dir + "/a_photo_of_a_cls.pt"
-        elif cfg.DATASET.NAME == "DomainNetMiniDF":
-            embedding_file = "/home/gotoyuta/lab/Dataset/domainnet/a_photo_of_a_cls.pt"
-        elif cfg.DATASET.NAME == "ImageNetDF":
-            embedding_file = "/home/gotoyuta/lab/Dataset/IMAGENET/a_photo_of_a_cls.pt"
 
         if osp.exists(embedding_file):
             print(f"Loading text features from {embedding_file}")

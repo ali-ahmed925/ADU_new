@@ -48,24 +48,7 @@ class OfficeHomeDF(DatasetBase):
         data_url = "https://drive.google.com/uc?id=1gkbf_KaxoBws-GWT3XIPZ7BnkqbAxIFa"
         root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
         self.dataset_dir = osp.join(root, dataset_dir)
-        self.use_soft_domain_label = cfg.USE_SOFT_DOMAIN_LABEL
-        if cfg.USE_SOFT_DOMAIN_LABEL:
-            if cfg.PREPROCESS_SOFT_LABEL == "Total":
-                save_path = "/nas/data/gotoyuta/Dataset/office_home_dg/soft_label_officehome_tot_datasetseed1_16shots.pkl"
-                # save_path = "soft_labels.pkl"
-                with open(save_path, "rb") as f:
-                    loaded_data = pickle.load(f)
-                self.soft_label = loaded_data["euclidean"].cpu()
-            elif cfg.PREPROCESS_SOFT_LABEL == "Class":
-                save_path = "/nas/data/gotoyuta/Dataset/office_home_dg/soft_label_officehome_datasetseed1_16shots.pkl"
-                with open(save_path, "rb") as f:
-                    loaded_data = pickle.load(f)
-                self.soft_label = loaded_data["euclidean"].cpu()
-            elif cfg.PREPROCESS_SOFT_LABEL == "Default":
-                pass
-            
-        else :
-            self.soft_label = None
+
         train, val, test = [], [], []
         if not osp.exists(self.dataset_dir):
             dst = osp.join(root, "office_home_dg.zip")
@@ -75,24 +58,15 @@ class OfficeHomeDF(DatasetBase):
         #     cfg.DATASET.SOURCE_DOMAINS, cfg.DATASET.TARGET_DOMAINS
         # )
         for domain in train_domains: #FIXME
-            if self.use_soft_domain_label:
-                if cfg.PREPROCESS_SOFT_LABEL == "Default":
-                    train += read_data(
-                        self.dataset_dir, [domain], "train", self.use_soft_domain_label, cfg.PREPROCESS_SOFT_LABEL
-                    )
-                else :
-                    train += read_data(
-                        self.dataset_dir, [domain], "train", self.use_soft_domain_label, cfg.PREPROCESS_SOFT_LABEL,self.soft_label
-                    )
-            else :
-                train += read_data(
+
+            train += read_data(
                     self.dataset_dir, [domain], "train"
                 )
             val += read_data(
                 self.dataset_dir, [domain], "val"
             )
         
-        num_shots = cfg.DATASET.NUM_SHOTS  # 使用する数ショット数を設定
+        num_shots = cfg.DATASET.NUM_SHOTS  
         train = self.generate_fewshot_dataset(train, num_shots=num_shots, repeat=True, seed=cfg.DATASET.SEED)
 
         for domain in test_domains:
@@ -178,35 +152,13 @@ def read_data(dataset_dir, input_domains, split, use_domain_soft_label=False, pr
 
             for idx, (impath, label) in enumerate(impath_label_list):
                 class_name = impath.split("/")[-2].lower()
-                if use_domain_soft_label:
-                    if preprocess_domain_label == "Default":
-                        soft_dlabel = torch.nn.functional.one_hot(torch.tensor(DOMAIN_NAMES.index(dname), dtype=torch.long), num_classes=len(DOMAIN_NAMES)).cpu().to(torch.float)
-                        item = Datum_w_Soft(
-                            impath=impath,
-                            label=label,
-                            domain=DOMAIN_NAMES.index(dname),
-                            classname=class_name,
-                            soft_domain_label=soft_dlabel
-                        )
-                        items.append(item)
-                    else :
-
-                        item = Datum_w_Soft(
-                            impath=impath,
-                            label=label,
-                            domain=DOMAIN_NAMES.index(dname),
-                            classname=class_name,
-                            soft_domain_label=domain_soft_label[idx]
-                        )
-                        items.append(item)
-                else :
-                    item = Datum(
-                        impath=impath,
-                        label=label,
-                        domain=DOMAIN_NAMES.index(dname),
-                        classname=class_name
-                    )
-                    items.append(item)
+                item = Datum(
+                    impath=impath,
+                    label=label,
+                    domain=DOMAIN_NAMES.index(dname),
+                    classname=class_name
+                )
+                items.append(item)
 
         return items
 

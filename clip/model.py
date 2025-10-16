@@ -8,53 +8,6 @@ from torch import nn
 from typing import Type, Tuple, Union, Optional
 NoneType = Type[None]
 
-class Bottleneck(nn.Module):
-    expansion = 4
-
-    def __init__(self, inplanes, planes, stride=1):
-        super().__init__()
-
-        # all conv layers have stride 1. an avgpool is performed after the second convolution when stride > 1
-        self.conv1 = nn.Conv2d(inplanes, planes, 1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-
-        self.conv2 = nn.Conv2d(planes, planes, 3, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-
-        self.avgpool = nn.AvgPool2d(stride) if stride > 1 else nn.Identity()
-
-        self.conv3 = nn.Conv2d(planes, planes * self.expansion, 1, bias=False)
-        self.bn3 = nn.BatchNorm2d(planes * self.expansion)
-
-        self.relu = nn.ReLU(inplace=True)
-        self.downsample = None
-        self.stride = stride
-
-        if stride > 1 or inplanes != planes * Bottleneck.expansion:
-            # downsampling layer is prepended with an avgpool, and the subsequent convolution has stride 1
-            self.downsample = nn.Sequential(OrderedDict([
-                ("-1", nn.AvgPool2d(stride)),
-                ("0", nn.Conv2d(inplanes, planes * self.expansion, 1, stride=1, bias=False)),
-                ("1", nn.BatchNorm2d(planes * self.expansion))
-            ]))
-
-    def forward(self, x: torch.Tensor):
-        identity = x
-
-        out = self.relu(self.bn1(self.conv1(x)))
-        out = self.relu(self.bn2(self.conv2(out)))
-        out = self.avgpool(out)
-        out = self.bn3(self.conv3(out))
-
-        if self.downsample is not None:
-            identity = self.downsample(x)
-
-        out += identity
-        out = self.relu(out)
-        return out
-
-
-
 class LayerNorm(nn.LayerNorm):
     """Subclass torch's LayerNorm to handle fp16."""
 
@@ -187,60 +140,14 @@ class Transformer(nn.Module):
         self.layers = layers
         # Implements respective encoder blocks for a given design choice
         current_trainer = design_details['trainer']
-        if current_trainer == 'IVLP' or current_trainer == 'VPT':
-            self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
-                                                                         text_layer, i,
-                                                                         design_details) if prompts_needed > i
-                                             else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
-                                                                              text_layer, i, design_details)
-                                             for i in range(layers)])
-        elif current_trainer in 'IVLP':
-            if current_trainer in 'Local':
-                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
-                                                                         text_layer, i,
-                                                                         design_details) if prompts_needed > i
-                                             else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
-                                                                              text_layer, i, design_details)
-                                             for i in range(layers)])
-            else :
-                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
-                                                                            text_layer, i,
-                                                                            design_details) if prompts_needed > i
-                                                else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
-                                                                                text_layer, i, design_details)
-                                             for i in range(layers)])
-        elif current_trainer == 'MaPLe':
-            self.resblocks = nn.Sequential(
-                *[ResidualAttentionBlock_MaPLe(width, heads, attn_mask, design_details, text_layer, i)
-                  for i in range(layers)])
-        elif "Local" in current_trainer :
-            if "VPT_Local" in current_trainer:
-                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
-                                                                         text_layer, i,
-                                                                         design_details) if prompts_needed > i
-                                             else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
-                                                                              text_layer, i, design_details)
-                                             for i in range(layers)])
-            elif "VPT_w_NNL_Local" == current_trainer:
-                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
-                                                                         text_layer, i,
-                                                                         design_details) if prompts_needed > i
-                                             else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
-                                                                              text_layer, i, design_details)
-                                             for i in range(layers)])
-            elif "VPT_w_NNL_Local_PromptGenerator" == current_trainer:
-                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, True,
-                                                                         text_layer, i,
-                                                                         design_details) if prompts_needed > i
-                                             else ResidualAttentionBlock_IVLP_Local(width, heads, attn_mask, False,
-                                                                              text_layer, i, design_details)
-                                             for i in range(layers)])
-            else: 
-                self.resblocks = nn.Sequential(*[ResidualAttentionBlock_Local(width, heads, attn_mask) for _ in range(layers)])
-        else:
-            # Corresponds to default CoOp or CoCoOp
-            assert current_trainer == 'CoOp' or current_trainer == 'CoCoOp'
-            self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)])
+
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP(width, heads, attn_mask, True,
+                                                                        text_layer, i,
+                                                                        design_details) if prompts_needed > i
+                                            else ResidualAttentionBlock_IVLP(width, heads, attn_mask, False,
+                                                                            text_layer, i, design_details)
+                                            for i in range(layers)])
+
         self.current_trainer = current_trainer
         self.patch_selection = False
 
@@ -352,11 +259,6 @@ class ResidualAttentionBlock_IVLP_Prompt(nn.Module):
                             else:   
                                 kv = prefix[1:,:,:]
                             visual_context = self.cross_attention_promptgen(visual_context, kv)
-                else :
-                    pass
-                    ##################################################
-                    # SAMPLE AGNOSTIC PROMPT TUNING
-                    ##################################################
 
                 x = torch.cat([prefix, visual_context], dim=0)
             else:
