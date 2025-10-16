@@ -101,13 +101,12 @@ class Transformer_Prompt(nn.Module):
         self.text_layer = text_layer
         # Implements respective encoder blocks for a given design choice
         current_trainer = design_details['trainer']
-        if current_trainer == "IVLP_VL_Adapter_Prompt":
-            self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, True,
-                                                                         text_layer, i,
-                                                                         design_details) if prompts_needed > i
-                                             else ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, False,
-                                                                              text_layer, i, design_details)
-                                             for i in range(layers)])
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, True,
+                                                                        text_layer, i,
+                                                                        design_details) if prompts_needed > i
+                                            else ResidualAttentionBlock_IVLP_Prompt(width, heads, attn_mask, False,
+                                                                            text_layer, i, design_details)
+                                            for i in range(layers)])
         self.independ_learnable_vision = design_details["independent_learnable_vision"]
         if not self.independ_learnable_vision :
             self.n_ctx_visual = design_details["vision_ctx"]  # hyperparameter
@@ -117,7 +116,6 @@ class Transformer_Prompt(nn.Module):
         
         self.current_trainer = current_trainer
         self.n_ctx_visual = design_details["vision_ctx"]
-        # self.select_layer = design_details["insert_layer"]
 
     def forward(self, x: torch.Tensor):
         if "Local" in self.current_trainer:

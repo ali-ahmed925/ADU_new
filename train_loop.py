@@ -96,7 +96,6 @@ def extend_cfg(cfg, args):
     cfg.IS_DOMAIN_DIVIDED = args.is_domain_divided
     cfg.CSV_FILE_PATH = args.csv_file_path
     cfg.MMD_WEIGHT = args.mmd_weight 
-    cfg.SOFT_LABEL_UPDATE_EPOCH = 1
     cfg.USE_CLASSTOKEN = False
     cfg.USE_CROSSATTENTION = True
     cfg.USE_VISION_ADAPTER = False
@@ -113,10 +112,9 @@ def extend_cfg(cfg, args):
     cfg.TRAINER.IVLP.CTX_INIT = "a photo of a"  # initialization words (only for language prompts)
     cfg.TRAINER.IVLP.PREC = "fp16"  # fp16, fp32, amp
 
-    # If both variables below are set to 0, 0, will the config will degenerate to COOP model
-    cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION = 9  # Max 12, minimum 0, for 0 it will act as shallow IVLP prompting (J=1)
-    cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT = 9  # Max 12, minimum 0, for 0 it will act as shallow IVLP prompting(J=1)
-    cfg.DATASET.SUBSAMPLE_CLASSES = "all"  # all, base or new
+    cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION = 9  
+    cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT = 9  
+    cfg.DATASET.SUBSAMPLE_CLASSES = "all"  
 
 def setup_cfg(args):
     cfg = get_cfg_default()
