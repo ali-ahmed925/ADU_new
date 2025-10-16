@@ -1,4 +1,4 @@
-# Approximate Domain Unlearning for Vision-Language Models (NeurIPS 2025 Spotlight)
+# (NeurIPS 2025 Spotlight) Approximate Domain Unlearning for Vision-Language Models 
 
 ## Overview
 This is the official code repository for the paper [Approximate Domain Unlearning for Vision-Language Models](https://kodaikawamura.github.io/Domain_Unlearning/) accepted at NeurIPS 2025 as a spotlight.

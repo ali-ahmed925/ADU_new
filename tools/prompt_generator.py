@@ -9,6 +9,7 @@ from einops import rearrange, repeat, reduce
 from segment_anything.modeling.prompt_encoder import PositionEmbeddingRandom
 
 
+
 def exists(val):
     return val is not None
 
