@@ -416,7 +416,7 @@ class TrainerDF(SimpleTrainer_):
         mmd_loss = total_pairwise_mmd(domain_output.float(), target_label.float()) * self.cfg.MMD_WEIGHT
         ddl = F.cross_entropy(domain_output, target_label) * self.ddl_loss_weight
 
-        domain_cls_loss = ddl + mmd_loss
+        domain_cls_loss = ddl - mmd_loss
 
         loss += domain_cls_loss
 

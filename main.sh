@@ -10,7 +10,7 @@ TRAINER=IVLP_VL_Adapter_Prompt
 DOMAIN_WEIGHT=30
 MMD=0.5
 
-DIR=/path/to/directory/to/save/results
+DIR=/nas/data/kawamura/ADU/last_check/
 
 
 echo "Run this job and save the output to ${DIR}"

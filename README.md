@@ -42,6 +42,9 @@ pip install -r requirements.txt
 
 ```
 
+* Prepare Datasets
+We followed the instructions in [dassl.pytorch](https://github.com/KaiyangZhou/Dassl.pytorch/blob/master/DATASETS.md) to prepare the datasets. Please refer to the instructions there.
+
 ## How to Run
 You can run the training and evaluation using the provided `main.sh <GPU_ID>` script. Please modify the parameters in the script as needed.
 
