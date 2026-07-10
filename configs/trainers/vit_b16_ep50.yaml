@@ -1,9 +1,9 @@
 # Independent Vision Language Prompting
 DATALOADER:
   TRAIN_X:
-    BATCH_SIZE: 8
+    BATCH_SIZE: 32
   TEST:
-    BATCH_SIZE: 8
+    BATCH_SIZE: 32
   NUM_WORKERS: 4
 
 INPUT:
