@@ -15,19 +15,17 @@
 CUDA_DEVICE=${1:-0}
 OUTPUT_DIR=${2:-"${HOME}/adu_results/paper_domainnet_mini"}
 shift 2
-FORGET_FILTER="$@"   # e.g. "sketch" or "clipart painting" or empty for full run
+FORGET_FILTER="${1:-}"   # e.g. "sketch" or empty for full run
+SEEDS="${2:-1 2 3}"      # e.g. "2 3" to skip seed 1
 
 DATA_ROOT="/home/owais/machine unlearning/ebm_unlearning/data/domainnet"
 DOMAIN_WEIGHT=30   # gamma
 MMD_WEIGHT=10      # lambda
 
-if [ -n "$FORGET_FILTER" ]; then
-    FILTER_ARG="--run_forget_domains ${FORGET_FILTER}"
-    echo "Running forget combination: [${FORGET_FILTER}], 3 seeds"
-else
-    FILTER_ARG=""
-    echo "Running FULL power-set (all 14 combinations × 3 seeds)"
-fi
+FILTER_ARG=""
+[ -n "$FORGET_FILTER" ] && FILTER_ARG="--run_forget_domains ${FORGET_FILTER}"
+
+echo "Forget: [${FORGET_FILTER:-all combinations}]  Seeds: [${SEEDS}]"
 
 CUDA_VISIBLE_DEVICES=${CUDA_DEVICE} conda run -n myn_again \
     python train_loop.py \
@@ -42,4 +40,5 @@ CUDA_VISIBLE_DEVICES=${CUDA_DEVICE} conda run -n myn_again \
     --mmd_weight ${MMD_WEIGHT} \
     --use_domain_cls_loss \
     --is_domain_divided \
+    --seeds ${SEEDS} \
     ${FILTER_ARG}

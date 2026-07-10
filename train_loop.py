@@ -246,6 +246,8 @@ if __name__ == "__main__":
     parser.add_argument( "--run_forget_domains", default=[], nargs="*",
         help="Run only this specific forget-domain combination (e.g. --run_forget_domains sketch). "
              "If empty, runs the full power-set of all domains (paper default).")
+    parser.add_argument( "--seeds", default=[1, 2, 3], nargs="+", type=int,
+        help="Which seeds to run (default: 1 2 3). E.g. --seeds 2 3 to skip seed 1.")
     parser.add_argument( "opts", default=None, nargs=argparse.REMAINDER, help="modify config options using the command-line",)
 
     args = parser.parse_args()
@@ -257,7 +259,7 @@ if __name__ == "__main__":
 
     base_output_dir = args.output_dir + "/"
 
-    seed_list = [1,2,3]
+    seed_list = args.seeds
 
     # output csv file path
     exp_csv_filedir = args.output_dir + "/"
