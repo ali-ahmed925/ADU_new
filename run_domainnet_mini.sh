@@ -13,7 +13,7 @@
 # FORGET: if provided, runs only that specific forget combination
 
 CUDA_DEVICE=${1:-0}
-OUTPUT_DIR=${2:-"./output/paper_domainnet_mini"}
+OUTPUT_DIR=${2:-"${HOME}/adu_results/paper_domainnet_mini"}
 shift 2
 FORGET_FILTER="$@"   # e.g. "sketch" or "clipart painting" or empty for full run
 
