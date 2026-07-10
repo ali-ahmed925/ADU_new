@@ -330,10 +330,10 @@ class TrainerDF(SimpleTrainer_):
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = ["clipart", "infograph", "painting", "quickdraw", "real", "sketch"]
 
-        elif cfg.DATASET.NAME == "DomainNetMiniDF":
+        elif cfg.DATASET.NAME in ("DomainNetMiniDF", "DomainNetMiniPaperDF"):
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = ["clipart", "painting", "real", "sketch"]
-            
+
         elif cfg.DATASET.NAME == "ImageNetDF":
             self.del_domain_list = cfg.DATASET.FORGETDOMAINS
             self.domain_list = ["real", "sketch"]

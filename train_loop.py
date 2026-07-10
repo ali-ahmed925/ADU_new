@@ -10,6 +10,7 @@ from dassl.engine import build_trainer
 import datasets.domainnet_df
 import datasets.office_home_df
 import datasets.domainnet_mini_df
+import datasets.domainnet_mini_paper_df
 
 import trainers.independent_VLAdapter_Prompt
 
@@ -135,8 +136,6 @@ def setup_cfg(args):
     # 4. From optional input arguments
     cfg.merge_from_list(args.opts)
 
-    cfg.OPTIM.MAX_EPOCH = 20
-
     cfg.freeze()
 
     return cfg
@@ -165,7 +164,7 @@ def main(args):
         results = trainer.train_loop()
         return results
     
-def get_loop_prepare(datasetname: str)->Tuple[List[str], Dict]:
+def get_loop_prepare(datasetname: str, run_forget_domains: List[str] = None)->Tuple[List[str], Dict]:
     print(datasetname)
     if datasetname == "office_home_df":
         domain_list = ["art", "clipart", "product", "real_world"]
@@ -173,21 +172,25 @@ def get_loop_prepare(datasetname: str)->Tuple[List[str], Dict]:
     elif datasetname == "domainnet_df":
         domain_list = ["clipart", "infograph", "painting", "quickdraw", "real", "sketch"]
 
-    elif datasetname == "domainnet_mini_df":
+    elif datasetname in ("domainnet_mini_df", "domainnet_mini_paper_df"):
         domain_list = ["clipart", "painting", "real", "sketch"]
     else :
-        assert False, "Dataset name should be office_home_df or domainnet_mini_df or domainnet_df"
-    
+        assert False, "Dataset name should be office_home_df or domainnet_mini_df or domainnet_mini_paper_df or domainnet_df"
+
     base_dict = {
             "A" : [],
             "F" : [],
             "H" : []
         }
 
-    power_set = [
-        list(subset) for i in range(1, len(domain_list)) \
-            for subset in itertools.combinations(domain_list, i)
-    ]
+    if run_forget_domains:
+        # Only run the specified exact combination (e.g. ["sketch"])
+        power_set = [sorted(run_forget_domains, key=lambda d: domain_list.index(d))]
+    else:
+        power_set = [
+            list(subset) for i in range(1, len(domain_list)) \
+                for subset in itertools.combinations(domain_list, i)
+        ]
 
     res_dict = {}
     for i in range(1, len(domain_list)):
@@ -240,11 +243,15 @@ if __name__ == "__main__":
     parser.add_argument( "--dataset_name", type=str, default="")
     parser.add_argument( "--domainloss_weight", type=float, default=0.0)
     parser.add_argument( "--mmd_weight", type=float, default=0.0)
+    parser.add_argument( "--run_forget_domains", default=[], nargs="*",
+        help="Run only this specific forget-domain combination (e.g. --run_forget_domains sketch). "
+             "If empty, runs the full power-set of all domains (paper default).")
     parser.add_argument( "opts", default=None, nargs=argparse.REMAINDER, help="modify config options using the command-line",)
 
     args = parser.parse_args()
-    
-    forget_domain_lists, base_dict = get_loop_prepare(args.dataset_name)
+
+    run_filter = args.run_forget_domains if args.run_forget_domains else None
+    forget_domain_lists, base_dict = get_loop_prepare(args.dataset_name, run_forget_domains=run_filter)
 
     datasetname = args.dataset_name
 
