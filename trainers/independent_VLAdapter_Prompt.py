@@ -209,12 +209,12 @@ class CustomCLIP(nn.Module):
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
 
-        if cfg.DATASET.NAME == "ImageNetDF" :
-            self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2*len(classnames))
-        elif cfg.DATASET.NAME == "DomainNetDF" :
-            self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 6*len(classnames))
+        if cfg.DATASET.NAME == "ImageNetDF":
+            self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 2)
+        elif cfg.DATASET.NAME == "DomainNetDF":
+            self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 6)
         else:
-            self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4*len(classnames))
+            self.domain_classifier = nn.Linear(self.image_encoder.output_dim, 4)
 
         self.domain_classifier.to(self.dtype)
         self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS

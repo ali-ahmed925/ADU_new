@@ -90,8 +90,18 @@ def compute_acc_for_df_eval(acc_dict,
             else :
                 acc_dict[f"correct_{domain}"] = correct
                 acc_dict[f"total_{domain}"] = total
+
+    for c_idx, cls in enumerate(classnames):
+        for d_idx, domain in enumerate(domain_list):
+            mask_cls = torch.isin(target, torch.tensor([c_idx]).to(device))
+            mask_dom = torch.isin(domain_label, torch.tensor([d_idx]).to(device))
+            mask = mask_cls & mask_dom
+            if not mask_false_check(mask):
+                correct, total = process(output[mask], target[mask])
+                acc_dict[f"correct_clsdom_{cls}_{domain}"] = acc_dict.get(f"correct_clsdom_{cls}_{domain}", 0) + correct
+                acc_dict[f"total_clsdom_{cls}_{domain}"] = acc_dict.get(f"total_clsdom_{cls}_{domain}", 0) + total
     if domain_class_divided:
-        if use_domain_classifier:
+        if use_domain_classifier and domain_logit is not None:
             correct, total = process(domain_logit, target_label)
             if "correct_domain" in acc_dict :
                 acc_dict["correct_domain"] += correct
@@ -113,7 +123,7 @@ def compute_acc_for_df_eval(acc_dict,
                         acc_dict[f"total_{cls}_{dm}_DC"] = total
                     pass
     else :
-        if use_domain_classifier:
+        if use_domain_classifier and domain_logit is not None:
             correct, total = process(domain_logit, target_label)
             if "correct_domain" in acc_dict :
                 acc_dict["correct_domain"] += correct

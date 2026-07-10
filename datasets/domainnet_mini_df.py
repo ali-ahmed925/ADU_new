@@ -38,15 +38,21 @@ class DomainNetMiniDF(DatasetBase):
         Adaptation. ICCV 2019.
     """
 
-    dataset_dir = "domainnet"
+    dataset_dir = "DomainNet"
     domains = [
         "clipart", "painting", "real", "sketch"
     ]
+    # 10-class subset matching the EBM experiment; sorted alphabetically so
+    # label index aligns with the other repo (tiger → index 7)
+    target_classes = [
+        "airplane", "bear", "car", "dog", "guitar",
+        "horse", "lion", "tiger", "truck", "zebra"
+    ]
 
     def __init__(self, cfg):
-        root = osp.abspath(osp.expanduser("/data"))
+        root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
         self.dataset_dir = osp.join(root, self.dataset_dir)
-        self.split_dir = osp.join(self.dataset_dir, "splits_mini")
+        self.split_dir = self.dataset_dir
 
         # self.check_input_domains(
         #     cfg.DATASET.SOURCE_DOMAINS, cfg.DATASET.TARGET_DOMAINS
@@ -117,6 +123,7 @@ class DomainNetMiniDF(DatasetBase):
     
     def _read_data(self, input_domains, split="train"):
         items = []
+        class_to_new_label = {c: i for i, c in enumerate(self.target_classes)}
 
         for domain, dname in enumerate(input_domains):
             filename = dname + "_" + split + ".txt"
@@ -126,10 +133,12 @@ class DomainNetMiniDF(DatasetBase):
                 lines = f.readlines()
                 for line in lines:
                     line = line.strip()
-                    impath, label = line.split(" ")
+                    impath, _ = line.split(" ")
                     classname = impath.split("/")[1]
+                    if classname not in class_to_new_label:
+                        continue  # skip classes outside our 10-class subset
                     impath = osp.join(self.dataset_dir, impath)
-                    label = int(label)
+                    label = class_to_new_label[classname]  # remap to 0-9
                     item = Datum(
                         impath=impath,
                         label=label,

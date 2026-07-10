@@ -40,7 +40,7 @@ class DomainNetDF(DatasetBase):
         Adaptation. ICCV 2019.
     """
 
-    dataset_dir = "domainnet"
+    dataset_dir = "DomainNet"
     domains = [
         "clipart", "infograph", "painting", "quickdraw", "real", "sketch"
     ]
@@ -48,7 +48,7 @@ class DomainNetDF(DatasetBase):
     def __init__(self, cfg):
         root = osp.abspath(osp.expanduser(cfg.DATASET.ROOT))
         self.dataset_dir = osp.join(root, self.dataset_dir)
-        self.split_dir = osp.join(self.dataset_dir, "splits")
+        self.split_dir = self.dataset_dir
 
         # self.check_input_domains(
         #     cfg.DATASET.SOURCE_DOMAINS, cfg.DATASET.TARGET_DOMAINS

@@ -6,7 +6,10 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except Exception:
+    SummaryWriter = None
 
 # from dassl.data import DataManager
 from dassl.optim import build_optimizer, build_lr_scheduler
@@ -180,7 +183,15 @@ class SimpleTrainer_(TrainerBase):
             self.model = nn.DataParallel(self.model)
 
     def train(self):
-        super().train(self.start_epoch, self.max_epoch)
+        self.before_train()
+        for self.epoch in range(self.start_epoch, self.max_epoch):
+            self.before_epoch()
+            self.run_epoch()
+            self.after_epoch()
+            if getattr(self, 'early_stop', False):
+                print(f"Early stopping triggered at epoch {self.epoch}")
+                break
+        self.after_train()
 
     def before_train(self):
         directory = self.cfg.OUTPUT_DIR
@@ -244,6 +255,22 @@ class SimpleTrainer_(TrainerBase):
 
         if meet_checkpoint_freq or last_epoch:
             self.save_model(self.epoch, self.output_dir)
+
+        # Early stopping logic
+        if hasattr(self, 'train_loss'):
+            if not hasattr(self, 'best_train_loss'):
+                self.best_train_loss = self.train_loss
+                self.patience_counter = 0
+            else:
+                if self.train_loss < self.best_train_loss - 1e-4:
+                    self.best_train_loss = self.train_loss
+                    self.patience_counter = 0
+                else:
+                    self.patience_counter += 1
+
+            patience = 15 # Increased patience for unlearning
+            if self.patience_counter >= patience:
+                self.early_stop = True
 
     @torch.no_grad()
     def test(self, split=None):
@@ -314,8 +341,9 @@ class TrainerDF(SimpleTrainer_):
         assert (set(self.domain_list) | set(self.del_domain_list)) == set(self.domain_list)
         self.prv_domain_list = list(set(self.domain_list) - set(self.del_domain_list))
         self.classnames = self.dm.dataset.classnames
+        self.del_class_list = getattr(cfg.DATASET, "FORGETCLASSES", [])
         
-        self.use_domain_classifier_loss = True
+        self.use_domain_classifier_loss = getattr(cfg, "USE_DOMAIN_CLASIFIER_LOSS", getattr(cfg, "USE_DOMAIN_CLASSIFIER_LOSS", True))
         self.kernel = "gaussian"
         self.is_domain_divided = True
         self.domain_class_divided = False
@@ -372,6 +400,9 @@ class TrainerDF(SimpleTrainer_):
 
             end = time.time()
 
+        if "loss" in losses.meters:
+            self.train_loss = losses.meters["loss"].avg
+
     def train_loop(self):
         super().train()
         return self.metrics_dict
@@ -379,7 +410,12 @@ class TrainerDF(SimpleTrainer_):
     def forward_backward(self, batch):
         image, label, domain = self.parse_batch_train(batch)
 
-        output, img_feat, _ , domain_output, _ = self.model(image) 
+        model_out = self.model(image)
+        if len(model_out) == 5:
+            output, img_feat, _, domain_output, _ = model_out
+        else:
+            output, img_feat, _, _ = model_out
+            domain_output = None
 
         entropy = Entropy()
         false_check_tensor = torch.zeros_like(domain, dtype=torch.bool)
@@ -388,11 +424,20 @@ class TrainerDF(SimpleTrainer_):
         # preservation loss
         # deletion loss
         ############################################
-        prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
-        prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
-
         del_domain_index = [self.domain_list.index(del_d) for del_d in self.del_domain_list if del_d in self.domain_list]
-        del_domain_mask = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+        domain_part = torch.isin(domain, torch.tensor(del_domain_index).to(self.device))
+
+        if self.del_class_list:
+            # Forget only specific (class, domain) pairs — e.g. tiger/sketch
+            del_class_index = [self.classnames.index(c) for c in self.del_class_list if c in self.classnames]
+            class_part = torch.isin(label, torch.tensor(del_class_index).to(self.device))
+            del_domain_mask = domain_part & class_part
+            prv_domain_mask = ~del_domain_mask
+        else:
+            # Original behaviour: forget entire domain
+            del_domain_mask = domain_part
+            prv_domain_index = [self.domain_list.index(prv_d) for prv_d in self.prv_domain_list if prv_d in self.domain_list]
+            prv_domain_mask = torch.isin(domain, torch.tensor(prv_domain_index).to(self.device))
 
         ### Imbalanced domain labels
         ## need to change prv_domain_mask, del_domain_mask, domain, and domain_output
@@ -411,14 +456,14 @@ class TrainerDF(SimpleTrainer_):
         ######################################################################
         # domain loss (domain classifier loss, nearest neighbor loss or both)
         #####################################################################
-        target_label = domain
-
-        mmd_loss = total_pairwise_mmd(domain_output.float(), target_label.float()) * self.cfg.MMD_WEIGHT
-        ddl = F.cross_entropy(domain_output, target_label) * self.ddl_loss_weight
-
-        domain_cls_loss = ddl - mmd_loss
-
-        loss += domain_cls_loss
+        if domain_output is not None:
+            target_label = domain
+            mmd_loss = total_pairwise_mmd(domain_output.float(), target_label.float()) * self.cfg.MMD_WEIGHT
+            ddl = F.cross_entropy(domain_output, target_label) * self.ddl_loss_weight
+            domain_cls_loss = ddl - mmd_loss
+            loss += domain_cls_loss
+        else:
+            domain_cls_loss = torch.tensor(0.0)
 
         self.model_backward_and_update(loss)
 
@@ -676,7 +721,12 @@ class TrainerDF(SimpleTrainer_):
         for batch_idx, batch in enumerate(tqdm(data_loader)):
             input, label, domain = self.parse_batch_test(batch)
             
-            output, img_feat, _, domain_logit, _ = self.model_inference(input)
+            model_out = self.model_inference(input)
+            if len(model_out) == 5:
+                output, img_feat, _, domain_logit, _ = model_out
+            else:
+                output, img_feat, _, _ = model_out
+                domain_logit = None
             
             self.evaluator.process(output, label)
             
@@ -747,17 +797,20 @@ class TrainerDF(SimpleTrainer_):
 
         if csv_col_name not in self.df.columns:
             new_column_values = [
-                round((eval_dict["correct_prv"] / eval_dict["total_prv"])*100, 3),
-                round((1 - eval_dict["correct_del"] / eval_dict["total_del"])*100, 3), 
-                round((eval_dict["correct_del"] / eval_dict["total_del"])*100, 3)
+                round((eval_dict.get("correct_prv", 0) / eval_dict.get("total_prv", 1))*100, 3),
+                round((1 - eval_dict.get("correct_del", 0) / eval_dict.get("total_del", 1))*100, 3), 
+                round((eval_dict.get("correct_del", 0) / eval_dict.get("total_del", 1))*100, 3)
             ]
-            specific_acc = "("
-            for idx, dname in enumerate(self.del_domain_list):
-                sp_acc = (eval_dict[f"correct_{dname}"] / eval_dict[f"total_{dname}"])*100
-                if idx == len(self.del_domain_list) - 1:
-                    specific_acc += f"{sp_acc:.3f})"
-                else:
-                    specific_acc += f"{sp_acc:.3f}, "
+            if len(self.del_domain_list) == 0:
+                specific_acc = "()"
+            else:
+                specific_acc = "("
+                for idx, dname in enumerate(self.del_domain_list):
+                    sp_acc = (eval_dict.get(f"correct_{dname}", 0) / eval_dict.get(f"total_{dname}", 1))*100
+                    if idx == len(self.del_domain_list) - 1:
+                        specific_acc += f"{sp_acc:.3f})"
+                    else:
+                        specific_acc += f"{sp_acc:.3f}, "
 
             new_column_values.append(specific_acc)
 
@@ -772,12 +825,27 @@ class TrainerDF(SimpleTrainer_):
 
         print("==========peservation or delete acc===============")
         for name in ["prv", "del"]:
-            acc = eval_dict[f"correct_{name}"] / eval_dict[f"total_{name}"]
+            acc = eval_dict.get(f"correct_{name}", 0) / eval_dict.get(f"total_{name}", 1)
             print(f"{name} : {acc:.5f}")
         print("==============domain specific acc=================")
         for domain_name in self.domain_list:
-            acc = eval_dict[f"correct_{domain_name}"] / eval_dict[f"total_{domain_name}"]
+            acc = eval_dict.get(f"correct_{domain_name}", 0) / eval_dict.get(f"total_{domain_name}", 1)
             print(f"{domain_name} : {acc:.5f}")
+
+        print("==============per class per domain acc============")
+        print(f"{'Class':<15} ", end="")
+        for domain_name in self.domain_list:
+            print(f"{domain_name:<10} ", end="")
+        print("")
+        for cls in self.classnames:
+            print(f"{cls:<15} ", end="")
+            for domain_name in self.domain_list:
+                correct = eval_dict.get(f"correct_clsdom_{cls}_{domain_name}", 0)
+                total = eval_dict.get(f"total_clsdom_{cls}_{domain_name}", 0)
+                acc = (correct / total) * 100 if total > 0 else 0
+                print(f"{acc:<9.2f}% ", end="")
+            print("")
+
         if self.domain_class_divided:
             if self.use_domain_classifier_loss:
                 print("==================domain DC accuracy==================")
@@ -785,26 +853,26 @@ class TrainerDF(SimpleTrainer_):
                     for idx in range(len(self.domain_list)*len(self.classnames)):
                         cls = self.classnames[int(idx / len(self.domain_list))]
                         dm = self.domain_list[int(idx % len(self.domain_list))]
-                        acc = eval_dict[f"correct_{cls}_{dm}_DC"] / eval_dict[f"total_{cls}_{dm}_DC"]
+                        acc = eval_dict.get(f"correct_{cls}_{dm}_DC", 0) / eval_dict.get(f"total_{cls}_{dm}_DC", 1)
                         print(f"{cls} {dm} : {acc:.5f}")
         else:
             if self.use_domain_classifier_loss:
                 print("==================domain DC accuracy==================")
                 if self.is_domain_divided:
                     for domain_name in self.domain_list:
-                        acc = eval_dict[f"correct_{domain_name}_DC"] / eval_dict[f"total_{domain_name}_DC"]
+                        acc = eval_dict.get(f"correct_{domain_name}_DC", 0) / eval_dict.get(f"total_{domain_name}_DC", 1)
                         print(f"{domain_name} : {acc:.5f}")
                 else:
                     for domain_name in ["prv", "del"]:
-                        acc = eval_dict[f"correct_{domain_name}_DC"] / eval_dict[f"total_{domain_name}_DC"]
+                        acc = eval_dict.get(f"correct_{domain_name}_DC", 0) / eval_dict.get(f"total_{domain_name}_DC", 1)
                         print(f"{domain_name} : {acc:.5f}")
-                acc = eval_dict["correct_domain"] / eval_dict["total_domain"]
+                acc = eval_dict.get("correct_domain", 0) / eval_dict.get("total_domain", 1)
                 print("==================domain DC accuracy tot==================")
                 print(f"domain acc : {acc:.5f}")
         print("===================================================")
-        metrics_A = eval_dict[f"correct_prv"] / eval_dict[f"total_prv"]
-        metrics_F = 1 - eval_dict[f"correct_del"] / eval_dict[f"total_del"]
-        metrics_H = 2 * metrics_A * metrics_F / (metrics_A + metrics_F)
+        metrics_A = eval_dict.get("correct_prv", 0) / eval_dict.get("total_prv", 1)
+        metrics_F = 1 - eval_dict.get("correct_del", 0) / eval_dict.get("total_del", 1)
+        metrics_H = 2 * metrics_A * metrics_F / (metrics_A + metrics_F) if (metrics_A + metrics_F) > 0 else 0
 
         self.metrics_dict = {
             "A" : 100 * metrics_A,

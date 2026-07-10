@@ -90,6 +90,7 @@ def extend_cfg(cfg, args):
     else :
         cfg.DATASET.FORGETDOMAINS = args.forget_domains
         # print(cfg.DATASET.FORGETDOMAINS)
+    cfg.DATASET.FORGETCLASSES = getattr(args, "forget_classes", [])
     cfg.EVAL_ONLY = args.eval_only
     cfg.DATASET.SEED = args.seed
     cfg.USE_DOMAIN_CLASIFIER_LOSS = args.use_domain_cls_loss
@@ -133,6 +134,8 @@ def setup_cfg(args):
 
     # 4. From optional input arguments
     cfg.merge_from_list(args.opts)
+
+    cfg.OPTIM.MAX_EPOCH = 20
 
     cfg.freeze()
 
@@ -228,6 +231,7 @@ if __name__ == "__main__":
     parser.add_argument( "--no-train", action="store_true", help="do not call trainer.train()")
     parser.add_argument( "--num_shots", type=int, default=-1)
     parser.add_argument( "--forget_domains", default=[], nargs="*", help="input forget domains like '--forget_domains domain1 domain2 ..' ")
+    parser.add_argument( "--forget_classes", default=[], nargs="*", help="class names to forget within the forget domains, e.g. '--forget_classes tiger lion'")
     parser.add_argument( "--domain_class_divided", action="store_true", help="default is False")
     parser.add_argument( "--lmd_domain_loss", type=float, default=1.0)
     parser.add_argument( "--use_domain_cls_loss", action="store_true", help="default is False")
