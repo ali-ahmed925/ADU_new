@@ -86,6 +86,9 @@ def main():
     ap.add_argument("--neighbor", default="lion")
     ap.add_argument("--seed", type=int, default=1,
                     help="MUST match the seed the checkpoint was trained with (exclusion set depends on it)")
+    ap.add_argument("--num-shots", type=int, default=8,
+                    help="MUST match --num_shots used in training. The eval reconstructs the exact "
+                         "same few-shot set (via seed+num_shots) and excludes precisely those images.")
     ap.add_argument("--include-test-split", action="store_true",
                     help="also fold in the official test-split images (extra ~5/cell)")
     ap.add_argument("--limit", type=int, default=0,
@@ -99,7 +102,7 @@ def main():
         seed=args.seed, source_domains=None, target_domains=None, transforms=None,
         trainer="IVLP_VL_Adapter_Prompt", backbone="", head="",
         eval_only=True, model_dir=args.ckpt_dir, load_epoch=args.load_epoch, no_train=True,
-        num_shots=8, forget_domains=[args.forget_domain], forget_classes=[args.forget_class],
+        num_shots=args.num_shots, forget_domains=[args.forget_domain], forget_classes=[args.forget_class],
         domain_class_divided=False, lmd_domain_loss=1.0,
         use_domain_cls_loss=False, is_domain_divided=True,
         forget_loss_type="entropy", no_retain_loss=False,
