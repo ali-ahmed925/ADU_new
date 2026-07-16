@@ -170,6 +170,28 @@ def main():
         mark = "  <== FORGET" if c == fc else ("  <== neighbor" if c == nb else "")
         print(line + mark, flush=True)
 
+    # ---- HOW the forget class fails: calibration + leakage of forgotten predictions ----
+    fc_rows = np.array([c == fc for (c, d) in index])
+    if fc_rows.any():
+        lab2cname = trainer.lab2cname  # {label -> classname}
+        logit_scale = model.logit_scale.exp().item()
+        L = logit_scale * (feats[fc_rows] @ txt.T)
+        L = L - L.max(1, keepdims=True)
+        P = np.exp(L); P /= P.sum(1, keepdims=True)
+        conf = P.max(1).mean() * 100
+        norm_ent = (-(P * np.log(P + 1e-12)).sum(1)).mean() / np.log(P.shape[1])
+        fp = preds[fc_rows]
+        n = int(fc_rows.sum())
+        from collections import Counter
+        top = Counter(int(x) for x in fp).most_common(6)
+        print(f"\n======== HOW '{fc}' IS FORGOTTEN (all domains, n={n}) ========", flush=True)
+        print(f"mean confidence of the prediction: {conf:5.1f}%   (HIGH = confidently-wrong, LOW = uncertain)")
+        print(f"normalized prediction entropy:     {norm_ent:5.3f}   (1.0 = uniform/even spread, 0 = concentrated)")
+        print(f"where forgotten-{fc} images are sent (top classes):")
+        for cid, cnt in top:
+            name = lab2cname.get(cid, str(cid))
+            print(f"    {name:<20} {100*cnt/n:5.1f}%")
+
     def ca(c, d):
         return acc[c].get(d, (float('nan'), 0))[0] * 100
 
