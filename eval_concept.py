@@ -6,26 +6,70 @@ a single class. Here we score the model's OWN predictions on EVERY unseen
 train-split image (hundreds per class per domain), for ALL classes, giving a
 trustworthy per-class × per-domain accuracy table.
 
-Why all classes: to prove the forget target (e.g. tiger) drops while EVERY other
-class — related (lion) and unrelated — is preserved, you need a reliable number
-for each class, not just tiger/lion.
+Self-contained: takes --root (the DomainNet parent dir), so it runs on any machine.
 
 Read-only. Uses the model's text head (argmax of image·text), i.e. the actual
 quantity forgetting acts on — not a linear probe.
 """
 import argparse
 import os
+import os.path as osp
 from collections import defaultdict
 import numpy as np
 import torch
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
 
 from dassl.engine import build_trainer
 from dassl.data.transforms import build_transform
 
-import datasets.domainnet_mini_paper_df  # noqa: F401
-import trainers.independent_VLAdapter_Prompt  # noqa: F401
+import datasets.domainnet_mini_paper_df  # noqa: F401  (registers dataset)
+import trainers.independent_VLAdapter_Prompt  # noqa: F401  (registers trainer)
 from train_loop import setup_cfg
-from probe_experiment import read_split, extract_features, DATA_ROOT, DOMAINS
+
+DOMAINS = ["clipart", "painting", "real", "sketch"]
+
+
+def read_split(root, domain, split):
+    """Return [(full_path, label)] from <root>/DomainNet/splits_mini/<domain>_<split>.txt."""
+    img_root = osp.join(root, "DomainNet")
+    split_file = osp.join(img_root, "splits_mini", f"{domain}_{split}.txt")
+    items = []
+    with open(split_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rel, label = line.split(" ")
+            items.append((osp.join(img_root, rel), int(label)))
+    return items
+
+
+class ImageListDataset(Dataset):
+    def __init__(self, items, tfm):
+        self.items, self.tfm = items, tfm
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, i):
+        path, label = self.items[i]
+        return self.tfm(Image.open(path).convert("RGB")), label
+
+
+@torch.no_grad()
+def extract_features(image_encoder, dtype, items, tfm, device, desc="", batch=64):
+    dl = DataLoader(ImageListDataset(items, tfm), batch_size=batch,
+                    shuffle=False, num_workers=4, pin_memory=True)
+    feats, labels = [], []
+    for bi, (imgs, lbs) in enumerate(dl):
+        f = image_encoder(imgs.to(device).type(dtype))[0]
+        f = f / f.norm(dim=-1, keepdim=True)
+        feats.append(f.float().cpu().numpy())
+        labels.append(lbs.numpy())
+        if (bi + 1) % 100 == 0:
+            print(f"  {desc}: batch {bi+1}/{len(dl)}", flush=True)
+    return np.concatenate(feats), np.concatenate(labels)
 
 
 def cls_of(path):
@@ -34,23 +78,24 @@ def cls_of(path):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--root", required=True, help="parent dir of DomainNet/ (the --root you train with)")
     ap.add_argument("--ckpt-dir", required=True, help="dir with VLPromptLearner/model.pth.tar-*")
     ap.add_argument("--load-epoch", type=int, required=True)
     ap.add_argument("--forget-domain", default="sketch")
     ap.add_argument("--forget-class", default="tiger")
     ap.add_argument("--neighbor", default="lion")
-    ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--seed", type=int, default=1,
+                    help="MUST match the seed the checkpoint was trained with (exclusion set depends on it)")
     ap.add_argument("--include-test-split", action="store_true",
-                    help="also fold in the official test-split images (the extra ~5/cell)")
+                    help="also fold in the official test-split images (extra ~5/cell)")
     ap.add_argument("--limit", type=int, default=0,
-                    help="cap images per (class,domain) cell; 0 = ALL unseen (default). "
-                         "Use a small value (e.g. 20) for a fast pipeline smoke test.")
+                    help="cap imgs per (class,domain) cell; 0 = ALL unseen (default). small value = smoke test")
     args = ap.parse_args()
 
     os.makedirs("/tmp/eval_concept_tmp", exist_ok=True)
     device = torch.device("cuda")
     ns = argparse.Namespace(
-        root=DATA_ROOT, output_dir="/tmp/eval_concept_tmp", resume="",
+        root=args.root, output_dir="/tmp/eval_concept_tmp", resume="",
         seed=args.seed, source_domains=None, target_domains=None, transforms=None,
         trainer="IVLP_VL_Adapter_Prompt", backbone="", head="",
         eval_only=True, model_dir=args.ckpt_dir, load_epoch=args.load_epoch, no_train=True,
@@ -81,19 +126,18 @@ def main():
     # 8-shot images the model actually trained on (to exclude)
     used = set(it.impath for it in trainer.dm.dataset.train_x)
 
-    # ---- build the full unseen eval set: every train-split image minus the 8-shot ----
+    # ---- full unseen eval set: every train-split image minus the 8-shot ----
     splits = ["train", "test"] if args.include_test_split else ["train"]
-    cell = defaultdict(list)                      # (classname, domain) -> [(path,label)]
+    cell = defaultdict(list)
     for d in DOMAINS:
         for sp in splits:
-            for p, l in read_split(d, sp):
+            for p, l in read_split(args.root, d, sp):
                 if p not in used:
                     cell[(cls_of(p), d)].append((p, l))
     if args.limit > 0:
         cell = {k: v[:args.limit] for k, v in cell.items()}
         print(f"[SMOKE] capping to {args.limit} imgs/cell", flush=True)
 
-    # flatten to one list, extract features in a single pass, predict
     flat, index = [], []
     for (c, d), items in cell.items():
         for p, l in items:
@@ -103,38 +147,33 @@ def main():
     preds = np.argmax(feats @ txt.T, axis=1)
     correct = (preds == labels).astype(float)
 
-    # aggregate per (class, domain)
-    acc = defaultdict(lambda: {})   # class -> {domain: (acc, n)}
     agg = defaultdict(lambda: [0.0, 0])
     for ok, (c, d) in zip(correct, index):
         agg[(c, d)][0] += ok; agg[(c, d)][1] += 1
+    acc = defaultdict(dict)
     for (c, d), (s, n) in agg.items():
         acc[c][d] = (s / n if n else float("nan"), n)
 
     classnames = sorted(acc.keys())
     fc, nb, fd = args.forget_class, args.neighbor, args.forget_domain
 
-    # ---- full per-class per-domain table ----
-    print("\n================ PER-CLASS × PER-DOMAIN ACCURACY (unseen pool) ================", flush=True)
-    print(f"{'class':<24}" + "".join(f"{d:<10}" for d in DOMAINS))
+    print("\n============ PER-CLASS × PER-DOMAIN ACCURACY (unseen pool) ============", flush=True)
+    print(f"{'class':<24}" + "".join(f"{d:<12}" for d in DOMAINS))
     for c in classnames:
         line = f"{c:<24}"
         for d in DOMAINS:
             a, n = acc[c].get(d, (float('nan'), 0))
-            line += f"{a*100:5.1f}({n:<3}) " if n else f"{'--':<9} "
+            line += f"{a*100:5.1f}(n={n:<4})" if n else f"{'--':<11} "
         mark = "  <== FORGET" if c == fc else ("  <== neighbor" if c == nb else "")
         print(line + mark, flush=True)
 
-    # ---- summary ----
-    def cell_acc(c, d):
+    def ca(c, d):
         return acc[c].get(d, (float('nan'), 0))[0] * 100
 
-    fsk = cell_acc(fc, fd)
-    f_other = np.nanmean([cell_acc(fc, d) for d in DOMAINS if d != fd])
-    # retain = every class except the forget class, averaged
-    retain_cells = [cell_acc(c, d) for c in classnames if c != fc for d in DOMAINS]
-    retain_mean = np.nanmean(retain_cells)
-    nb_mean = np.nanmean([cell_acc(nb, d) for d in DOMAINS])
+    fsk = ca(fc, fd)
+    f_other = np.nanmean([ca(fc, d) for d in DOMAINS if d != fd])
+    retain_mean = np.nanmean([ca(c, d) for c in classnames if c != fc for d in DOMAINS])
+    nb_mean = np.nanmean([ca(nb, d) for d in DOMAINS])
 
     print("\n================ SUMMARY ================", flush=True)
     print(f"{fc} in forget domain ({fd}):     {fsk:5.1f}%   <- want LOW")
