@@ -92,6 +92,8 @@ def extend_cfg(cfg, args):
         cfg.DATASET.FORGETDOMAINS = args.forget_domains
         # print(cfg.DATASET.FORGETDOMAINS)
     cfg.DATASET.FORGETCLASSES = getattr(args, "forget_classes", [])
+    cfg.FORGET_LOSS_TYPE = getattr(args, "forget_loss_type", "entropy")
+    cfg.NO_RETAIN_LOSS = getattr(args, "no_retain_loss", False)
     cfg.EVAL_ONLY = args.eval_only
     cfg.DATASET.SEED = args.seed
     cfg.USE_DOMAIN_CLASIFIER_LOSS = args.use_domain_cls_loss
@@ -193,9 +195,9 @@ def get_loop_prepare(datasetname: str, run_forget_domains: List[str] = None)->Tu
         ]
 
     res_dict = {}
-    for i in range(1, len(domain_list)):
-        key_i = f"forgetdomain_{i}"
-        res_dict[key_i] = copy.deepcopy(base_dict)
+    sizes = sorted({len(subset) for subset in power_set})
+    for i in sizes:
+        res_dict[f"forgetdomain_{i}"] = copy.deepcopy(base_dict)
 
     return power_set, res_dict
 
@@ -235,6 +237,10 @@ if __name__ == "__main__":
     parser.add_argument( "--num_shots", type=int, default=-1)
     parser.add_argument( "--forget_domains", default=[], nargs="*", help="input forget domains like '--forget_domains domain1 domain2 ..' ")
     parser.add_argument( "--forget_classes", default=[], nargs="*", help="class names to forget within the forget domains, e.g. '--forget_classes tiger lion'")
+    parser.add_argument( "--forget_loss_type", type=str, default="entropy", choices=["entropy", "neggrad"],
+        help="forget objective: 'entropy' = entropy maximization (ADU-style), 'neggrad' = gradient ascent on forget-set CE")
+    parser.add_argument( "--no_retain_loss", action="store_true",
+        help="drop the retain CE term (pure NegGrad: ascent on forget set only)")
     parser.add_argument( "--domain_class_divided", action="store_true", help="default is False")
     parser.add_argument( "--lmd_domain_loss", type=float, default=1.0)
     parser.add_argument( "--use_domain_cls_loss", action="store_true", help="default is False")
@@ -300,46 +306,42 @@ if __name__ == "__main__":
         today = now.strftime("%Y%m%d_%H%M%S")
         data_seed = [today,]
 
-        for idx in range(len(results_dict[f"seed{seed}"])):
-            results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"] = sum(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"]) / len(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"])
-            results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"] = sum(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"]) / len(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"])
-            results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"] = sum(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"]) / len(results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"])
+        for key in results_dict[f"seed{seed}"]:
+            for metric in ("A", "F", "H"):
+                vals = results_dict[f"seed{seed}"][key][metric]
+                results_dict[f"seed{seed}"][key][metric] = sum(vals) / len(vals)
             data_seed.extend(
                 [
-                    results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["H"],
-                    results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["A"],
-                    results_dict[f"seed{seed}"][f"forgetdomain_{idx+1}"]["F"]
+                    results_dict[f"seed{seed}"][key]["H"],
+                    results_dict[f"seed{seed}"][key]["A"],
+                    results_dict[f"seed{seed}"][key]["F"]
                 ]
-            )  
+            )
         
         with open(exp_csv_filepath_seedwise, mode="a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
             writer.writerow(data_seed)
 
-    tot_res = len(results_dict) # seed num
-    tot_num_fd = len(base_dict) # forget domain num 
-
     fin_res = copy.deepcopy(base_dict)
-    for num_fd in range(tot_num_fd):
+    for key in fin_res:
         for s in seed_list:
-            fin_res[f"forgetdomain_{num_fd + 1}"]["H"].append(results_dict[f"seed{s}"][f"forgetdomain_{num_fd+1}"]["H"])
-            fin_res[f"forgetdomain_{num_fd + 1}"]["A"].append(results_dict[f"seed{s}"][f"forgetdomain_{num_fd+1}"]["A"])
-            fin_res[f"forgetdomain_{num_fd + 1}"]["F"].append(results_dict[f"seed{s}"][f"forgetdomain_{num_fd+1}"]["F"])
-        
+            fin_res[key]["H"].append(results_dict[f"seed{s}"][key]["H"])
+            fin_res[key]["A"].append(results_dict[f"seed{s}"][key]["A"])
+            fin_res[key]["F"].append(results_dict[f"seed{s}"][key]["F"])
+
     now = datetime.now()
     today = now.strftime("%Y%m%d_%H%M%S")
     data_tot = [today,]
-    for num_fd in range(tot_num_fd):
-        fin_res[f"forgetdomain_{num_fd+1}"]["H"] = sum(fin_res[f"forgetdomain_{num_fd+1}"]["H"]) / len (fin_res[f"forgetdomain_{num_fd+1}"]["H"])
-        fin_res[f"forgetdomain_{num_fd+1}"]["A"] = sum(fin_res[f"forgetdomain_{num_fd+1}"]["A"]) / len (fin_res[f"forgetdomain_{num_fd+1}"]["A"])
-        fin_res[f"forgetdomain_{num_fd+1}"]["F"] = sum(fin_res[f"forgetdomain_{num_fd+1}"]["F"]) / len (fin_res[f"forgetdomain_{num_fd+1}"]["F"])
+    for key in fin_res:
+        for metric in ("H", "A", "F"):
+            fin_res[key][metric] = sum(fin_res[key][metric]) / len(fin_res[key][metric])
         data_tot.extend(
             [
-                fin_res[f"forgetdomain_{num_fd+1}"]["H"],
-                fin_res[f"forgetdomain_{num_fd+1}"]["A"],
-                fin_res[f"forgetdomain_{num_fd+1}"]["F"]
+                fin_res[key]["H"],
+                fin_res[key]["A"],
+                fin_res[key]["F"]
             ]
-        ) 
+        )
 
     with open(exp_csv_filepath, mode="a", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)

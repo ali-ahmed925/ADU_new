@@ -344,6 +344,8 @@ class TrainerDF(SimpleTrainer_):
         self.del_class_list = getattr(cfg.DATASET, "FORGETCLASSES", [])
         
         self.use_domain_classifier_loss = getattr(cfg, "USE_DOMAIN_CLASIFIER_LOSS", getattr(cfg, "USE_DOMAIN_CLASSIFIER_LOSS", True))
+        self.forget_loss_type = getattr(cfg, "FORGET_LOSS_TYPE", "entropy")
+        self.no_retain_loss = getattr(cfg, "NO_RETAIN_LOSS", False)
         self.kernel = "gaussian"
         self.is_domain_divided = True
         self.domain_class_divided = False
@@ -450,8 +452,17 @@ class TrainerDF(SimpleTrainer_):
         if torch.equal(false_check_tensor, del_domain_mask):
             loss_del = 0
         else :
-            loss_del = entropy(output[del_domain_mask])
-        loss = loss_prv - loss_del
+            if self.forget_loss_type == "neggrad":
+                # NegGrad: gradient ascent on the forget set's CE
+                loss_del = F.cross_entropy(output[del_domain_mask], label[del_domain_mask])
+            else:
+                loss_del = entropy(output[del_domain_mask])
+
+        if self.no_retain_loss:
+            # pure NegGrad: ascent on forget set only, no retain term
+            loss = -loss_del if isinstance(loss_del, torch.Tensor) else 0
+        else:
+            loss = loss_prv - loss_del
 
         ######################################################################
         # domain loss (domain classifier loss, nearest neighbor loss or both)
@@ -465,10 +476,11 @@ class TrainerDF(SimpleTrainer_):
         else:
             domain_cls_loss = torch.tensor(0.0)
 
-        self.model_backward_and_update(loss)
+        if isinstance(loss, torch.Tensor):
+            self.model_backward_and_update(loss)
 
         loss_summary = {
-            "loss": loss.item(),
+            "loss": loss.item() if isinstance(loss, torch.Tensor) else float(loss),
             "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
             "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
             "loss_domain_cls": domain_cls_loss.item() ,
