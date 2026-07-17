@@ -128,6 +128,13 @@ def main():
 
     # 8-shot images the model actually trained on (to exclude)
     used = set(it.impath for it in trainer.dm.dataset.train_x)
+    # also exclude any extra forget-pool images used by suppress_marg (rigor)
+    pool_file = osp.join(args.ckpt_dir, "forget_pool.txt")
+    if osp.exists(pool_file):
+        with open(pool_file) as f:
+            extra = [ln.strip() for ln in f if ln.strip()]
+        used |= set(extra)
+        print(f"== excluding {len(extra)} forget-pool images (forget_pool.txt) ==", flush=True)
 
     # ---- full unseen eval set: every train-split image minus the 8-shot ----
     splits = ["train", "test"] if args.include_test_split else ["train"]

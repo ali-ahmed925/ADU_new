@@ -359,6 +359,12 @@ class TrainerDF(SimpleTrainer_):
         # different forget images predicting different classes -> breaks the
         # across-image funnel that pins the leak on one class, e.g. 'cat').
         self.marg_weight = getattr(cfg, "MARG_WEIGHT", 1.0)
+        # P2c: size of the dedicated forget pool for suppress_marg. 0 => use the
+        # 8-shot forget images already in train_x. >0 => load that many forget
+        # (class,domain) images straight from the split (retain stays 8-shot;
+        # 'large forget budget, small adapt budget' -- realistic for unlearning,
+        # and makes the batch-marginal non-degenerate).
+        self.forget_pool_size = getattr(cfg, "FORGET_POOL_SIZE", 0)
         self.exclude_forget_class_from_retain = getattr(cfg, "EXCLUDE_FORGET_CLASS_FROM_RETAIN", False)
         self.kernel = "gaussian"
         self.is_domain_divided = True
@@ -432,12 +438,38 @@ class TrainerDF(SimpleTrainer_):
         self._forget_tfm = build_transform(self.cfg, is_train=True)
         cls_idx = [self.classnames.index(c) for c in self.del_class_list if c in self.classnames]
         dom_idx = [self.domain_list.index(d) for d in self.del_domain_list if d in self.domain_list]
-        items = [it for it in self.dm.dataset.train_x
-                 if it.label in cls_idx and it.domain in dom_idx]
-        self._forget_pil = [Image.open(it.impath).convert("RGB") for it in items]
-        self._forget_labels = torch.tensor([it.label for it in items], device=self.device)
-        print(f"[MARG] forget-batch built: {len(items)} images "
-              f"(classes={cls_idx}, domains={dom_idx})", flush=True)
+
+        if self.forget_pool_size and self.forget_pool_size > 0:
+            # Load up to forget_pool_size forget images straight from the split
+            # (deterministic: sorted by path). Retain loader stays 8-shot.
+            img_root = osp.join(self.cfg.DATASET.ROOT, "DomainNet")
+            paths = []
+            for d in self.del_domain_list:
+                sf = osp.join(img_root, "splits_mini", f"{d}_train.txt")
+                with open(sf) as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        rel, lab = line.split(" ")
+                        if rel.split("/")[-2] in self.del_class_list:
+                            paths.append((osp.join(img_root, rel), int(lab)))
+            paths = sorted(paths)[: self.forget_pool_size]
+            impaths = [p for p, _ in paths]
+            labels = [l for _, l in paths]
+            # record the used forget images so eval can exclude them (rigor)
+            with open(osp.join(self.output_dir, "forget_pool.txt"), "w") as f:
+                f.write("\n".join(impaths))
+        else:
+            items = [it for it in self.dm.dataset.train_x
+                     if it.label in cls_idx and it.domain in dom_idx]
+            impaths = [it.impath for it in items]
+            labels = [it.label for it in items]
+
+        self._forget_pil = [Image.open(p).convert("RGB") for p in impaths]
+        self._forget_labels = torch.tensor(labels, device=self.device)
+        print(f"[MARG] forget-batch built: {len(impaths)} images "
+              f"(pool_size={self.forget_pool_size}, classes={cls_idx}, domains={dom_idx})", flush=True)
 
     def forward_backward(self, batch):
         image, label, domain = self.parse_batch_train(batch)
