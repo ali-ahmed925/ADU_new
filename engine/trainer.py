@@ -350,6 +350,11 @@ class TrainerDF(SimpleTrainer_):
         # P2 (suppress_flat): relative strength of the flatten (anti-leak) term
         # vs the suppression (NegGrad-strength push-down) term.
         self.flat_weight = getattr(cfg, "FLAT_WEIGHT", 1.0)
+        # P2: cap on the per-image suppression CE so the push-down cannot run to
+        # -inf (unbounded CE-ascent = NegGrad instability). ln(126)=4.84 is the
+        # uniform level; cap 6.0 => target prob ~0.0025, safely below uniform,
+        # then the gradient switches off. Prevents the loss explosion.
+        self.suppress_cap = getattr(cfg, "SUPPRESS_CAP", 6.0)
         self.exclude_forget_class_from_retain = getattr(cfg, "EXCLUDE_FORGET_CLASS_FROM_RETAIN", False)
         self.kernel = "gaussian"
         self.is_domain_divided = True
@@ -482,13 +487,16 @@ class TrainerDF(SimpleTrainer_):
                 #     the nearest neighbour -> leak-free by construction).
                 L = output[del_domain_mask]                 # (n, C) scaled logits
                 tgt = label[del_domain_mask]                # all = the forget class
-                loss_suppress = F.cross_entropy(L, tgt)     # MAXIMIZE (push target down)
+                # BOUNDED suppression: clamp per-image CE at suppress_cap so the
+                # push-down saturates (no -inf runaway / NegGrad blow-up).
+                ce = F.cross_entropy(L, tgt, reduction="none")     # (n,)
+                loss_suppress = ce.clamp(max=self.suppress_cap).mean()
                 keep = torch.ones_like(L, dtype=torch.bool)
                 keep[torch.arange(L.shape[0], device=L.device), tgt] = False
                 L_rest = L[keep].view(L.shape[0], L.shape[1] - 1)   # non-target logits
                 loss_flat = L_rest.var(dim=1).mean()        # MINIMIZE (spread the rest)
                 # bake in the internal signs: this whole term is ADDED below, so
-                # minimizing it = maximize suppression + minimize residual variance.
+                # minimizing it = maximize (capped) suppression + minimize residual variance.
                 self._sf_suppress = float(loss_suppress)
                 self._sf_flat = float(loss_flat)
                 loss_del = -loss_suppress + self.flat_weight * loss_flat

@@ -96,6 +96,7 @@ def extend_cfg(cfg, args):
     cfg.NO_RETAIN_LOSS = getattr(args, "no_retain_loss", False)
     cfg.FORGET_WEIGHT = getattr(args, "forget_weight", 1.0)
     cfg.FLAT_WEIGHT = getattr(args, "flat_weight", 1.0)
+    cfg.SUPPRESS_CAP = getattr(args, "suppress_cap", 6.0)
     cfg.EXCLUDE_FORGET_CLASS_FROM_RETAIN = getattr(args, "exclude_forget_class_from_retain", False)
     cfg.EVAL_ONLY = args.eval_only
     cfg.DATASET.SEED = args.seed
@@ -250,6 +251,9 @@ if __name__ == "__main__":
         help="weight (lambda_f) on the whole forget term ('flat' / 'suppress_flat')")
     parser.add_argument( "--flat_weight", type=float, default=1.0,
         help="P2 only: relative weight of the flatten (anti-leak) term vs the suppression term in 'suppress_flat'")
+    parser.add_argument( "--suppress_cap", type=float, default=6.0,
+        help="P2 only: cap on per-image suppression CE (prevents unbounded push-down / NegGrad blow-up). "
+             "ln(126)=4.84 is uniform; 6.0 => target prob ~0.0025, below uniform")
     parser.add_argument( "--exclude_forget_class_from_retain", action="store_true",
         help="Lever P1: remove the forget class (ALL domains) from the retain CE, "
              "so nothing reinforces it while forgetting propagates. Default OFF (v1).")
