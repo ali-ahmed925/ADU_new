@@ -355,6 +355,10 @@ class TrainerDF(SimpleTrainer_):
         # uniform level; cap 6.0 => target prob ~0.0025, safely below uniform,
         # then the gradient switches off. Prevents the loss explosion.
         self.suppress_cap = getattr(cfg, "SUPPRESS_CAP", 6.0)
+        # P2c (suppress_marg): weight on the batch-MARGINAL entropy term (rewards
+        # different forget images predicting different classes -> breaks the
+        # across-image funnel that pins the leak on one class, e.g. 'cat').
+        self.marg_weight = getattr(cfg, "MARG_WEIGHT", 1.0)
         self.exclude_forget_class_from_retain = getattr(cfg, "EXCLUDE_FORGET_CLASS_FROM_RETAIN", False)
         self.kernel = "gaussian"
         self.is_domain_divided = True
@@ -419,6 +423,22 @@ class TrainerDF(SimpleTrainer_):
         super().train()
         return self.metrics_dict
     
+    def _build_forget_batch(self):
+        """Load ALL forget (class,domain) images once, for the suppress_marg
+        dedicated forward. Stores PIL images + labels + a train transform so we
+        re-augment freshly each step (augmentation adds a little extra diversity)."""
+        from PIL import Image
+        from dassl.data.transforms import build_transform
+        self._forget_tfm = build_transform(self.cfg, is_train=True)
+        cls_idx = [self.classnames.index(c) for c in self.del_class_list if c in self.classnames]
+        dom_idx = [self.domain_list.index(d) for d in self.del_domain_list if d in self.domain_list]
+        items = [it for it in self.dm.dataset.train_x
+                 if it.label in cls_idx and it.domain in dom_idx]
+        self._forget_pil = [Image.open(it.impath).convert("RGB") for it in items]
+        self._forget_labels = torch.tensor([it.label for it in items], device=self.device)
+        print(f"[MARG] forget-batch built: {len(items)} images "
+              f"(classes={cls_idx}, domains={dom_idx})", flush=True)
+
     def forward_backward(self, batch):
         image, label, domain = self.parse_batch_train(batch)
 
@@ -465,7 +485,34 @@ class TrainerDF(SimpleTrainer_):
         else :
             loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
 
-        if torch.equal(false_check_tensor, del_domain_mask):
+        if self.forget_loss_type == "suppress_marg":
+            # P2c: BATCH-MARGINAL diversity. The 'cat' concentration is an
+            # ACROSS-image funnel (all forgotten tigers land on cat), which no
+            # per-image term can fix (variance-min and entropy-max both plateau
+            # at cat~29%). Here we forward ALL forget images together every step
+            # and add entropy-MAX on the MARGINAL (batch-averaged) non-target
+            # prediction: if every image predicts cat the marginal peaks ->
+            # penalized; to satisfy it, different images must pick different
+            # classes. Plus per-image entropy + the same bounded suppression.
+            if not hasattr(self, "_forget_pil"):
+                self._build_forget_batch()
+            imgs = torch.stack([self._forget_tfm(p) for p in self._forget_pil]).to(self.device)
+            Lf = self.model(imgs)[0]                          # (m, C) scaled logits
+            tf = self._forget_labels                          # (m,) all = forget class
+            ce = F.cross_entropy(Lf, tf, reduction="none")
+            loss_suppress = ce.clamp(max=self.suppress_cap).mean()
+            keep = torch.ones_like(Lf, dtype=torch.bool)
+            keep[torch.arange(Lf.shape[0], device=Lf.device), tf] = False
+            Lrest = Lf[keep].view(Lf.shape[0], Lf.shape[1] - 1)   # (m, C-1) non-target
+            p = F.softmax(Lrest, dim=1)
+            H_cond = -(p * torch.log(p + 1e-12)).sum(dim=1).mean()    # per-image (maximize)
+            p_bar = p.mean(dim=0)                                     # marginal over the m images
+            H_marg = -(p_bar * torch.log(p_bar + 1e-12)).sum()       # marginal (maximize)
+            self._sf_suppress = float(loss_suppress)
+            self._sf_flat = float(H_cond)
+            self._sf_marg = float(H_marg)
+            loss_del = -loss_suppress - self.flat_weight * H_cond - self.marg_weight * H_marg
+        elif torch.equal(false_check_tensor, del_domain_mask):
             loss_del = 0
         else :
             if self.forget_loss_type == "neggrad":
@@ -528,7 +575,7 @@ class TrainerDF(SimpleTrainer_):
         if isinstance(loss_del, torch.Tensor):
             # 'flat' and 'suppress_flat' have their signs baked in -> ADD;
             # 'entropy'/'neggrad' are maximized -> SUBTRACT.
-            if self.forget_loss_type in ("flat", "suppress_flat", "suppress_entropy"):
+            if self.forget_loss_type in ("flat", "suppress_flat", "suppress_entropy", "suppress_marg"):
                 loss = base + self.forget_weight * loss_del
             else:
                 loss = base - loss_del
@@ -544,6 +591,10 @@ class TrainerDF(SimpleTrainer_):
                 term = "flat(var)" if self.forget_loss_type == "suppress_flat" else "ent(H)"
                 extra = (f" [suppress(CE)={self._sf_suppress:.4f} "
                          f"{term}={self._sf_flat:.4f} flat_w={self.flat_weight}]")
+            elif self.forget_loss_type == "suppress_marg":
+                extra = (f" [suppress(CE)={self._sf_suppress:.4f} "
+                         f"H_cond={self._sf_flat:.4f} H_marg={self._sf_marg:.4f} "
+                         f"flat_w={self.flat_weight} marg_w={self.marg_weight}]")
             print(f"[FORGET-BATCH {self._forgetlog_n}/8] n_forget={int(del_domain_mask.sum())} "
                   f"loss_prv={float(loss_prv):.4f} "
                   f"loss_forget[{self.forget_loss_type}]={float(loss_del):.4f} "
