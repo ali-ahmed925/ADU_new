@@ -192,6 +192,42 @@ def main():
             name = lab2cname.get(cid, str(cid))
             print(f"    {name:<20} {100*cnt/n:5.1f}%")
 
+    # ---- FEATURE-LEAK / FUNNELING diagnostic ----
+    # Var_c(<f,t_c>) = f^T Sigma_t f. Sigma_t (cov of C text embeddings in d dims)
+    # is rank <= C-1, so its NULL SPACE (dim ~ d-C+1) is exactly the set of f giving
+    # uniform logits -> the "flat" region is a large subspace, not a single line,
+    # so funnel-to-a-line is not forced. The real risk (caveat 2) is that limited
+    # prompt capacity clusters the forgotten features WITHIN that subspace. Measure
+    # that directly: effective dimensionality (participation ratio) + pairwise
+    # cohesion of forgotten features vs a normal retain class.
+    if fc_rows.any():
+        Tc_ = txt - txt.mean(0, keepdims=True)
+        evals = np.linalg.eigvalsh(Tc_.T @ Tc_ / txt.shape[0])
+        lam_max = float(evals[-1])
+        flat_dim = int((evals < 1e-4 * lam_max).sum())     # ~ null space of Sigma_t
+
+        def spread(F):
+            n = len(F)
+            if n < 2:
+                return float("nan"), float("nan")
+            Fc = F - F.mean(0, keepdims=True)
+            ev = np.clip(np.linalg.eigvalsh(Fc.T @ Fc / n), 0, None)
+            pr = float(ev.sum() ** 2 / ((ev ** 2).sum() + 1e-12))   # effective dims spanned
+            G = F @ F.T
+            pc = float((G.sum() - np.trace(G)) / (n * (n - 1)))     # mean pairwise cosine
+            return pr, pc
+
+        nb_rows = np.array([c == nb for (c, d) in index])
+        fpr, fpc = spread(feats[fc_rows])
+        rpr, rpc = spread(feats[nb_rows]) if nb_rows.any() else (float("nan"), float("nan"))
+
+        print(f"\n======== FEATURE-LEAK / FUNNELING (forget='{fc}' vs reference='{nb}') ========", flush=True)
+        print(f"uniform-logit (flat) subspace dim = {flat_dim} of {txt.shape[1]}  "
+              f"(large => spread is geometrically possible; funnel-to-a-line not forced)")
+        print(f"{'':<30}{'forget':>9}{'reference':>11}")
+        print(f"{'effective dims (part. ratio)':<30}{fpr:>9.1f}{rpr:>11.1f}   (forget << ref => funneled to fewer dims)")
+        print(f"{'mean pairwise cosine':<30}{fpc:>9.3f}{rpc:>11.3f}   (forget >> ref => features clustered)")
+
     def ca(c, d):
         return acc[c].get(d, (float('nan'), 0))[0] * 100
 

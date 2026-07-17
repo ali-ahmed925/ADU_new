@@ -94,6 +94,8 @@ def extend_cfg(cfg, args):
     cfg.DATASET.FORGETCLASSES = getattr(args, "forget_classes", [])
     cfg.FORGET_LOSS_TYPE = getattr(args, "forget_loss_type", "entropy")
     cfg.NO_RETAIN_LOSS = getattr(args, "no_retain_loss", False)
+    cfg.FORGET_WEIGHT = getattr(args, "forget_weight", 1.0)
+    cfg.EXCLUDE_FORGET_CLASS_FROM_RETAIN = getattr(args, "exclude_forget_class_from_retain", False)
     cfg.EVAL_ONLY = args.eval_only
     cfg.DATASET.SEED = args.seed
     cfg.USE_DOMAIN_CLASIFIER_LOSS = args.use_domain_cls_loss
@@ -237,10 +239,16 @@ if __name__ == "__main__":
     parser.add_argument( "--num_shots", type=int, default=-1)
     parser.add_argument( "--forget_domains", default=[], nargs="*", help="input forget domains like '--forget_domains domain1 domain2 ..' ")
     parser.add_argument( "--forget_classes", default=[], nargs="*", help="class names to forget within the forget domains, e.g. '--forget_classes tiger lion'")
-    parser.add_argument( "--forget_loss_type", type=str, default="entropy", choices=["entropy", "neggrad"],
-        help="forget objective: 'entropy' = entropy maximization (ADU-style), 'neggrad' = gradient ascent on forget-set CE")
+    parser.add_argument( "--forget_loss_type", type=str, default="entropy", choices=["entropy", "neggrad", "flat"],
+        help="forget objective: 'entropy' = entropy maximization (ADU-style), 'neggrad' = gradient ascent on forget-set CE, "
+             "'flat' = minimize variance of scaled logits (uniform-by-construction, leak-free target)")
     parser.add_argument( "--no_retain_loss", action="store_true",
         help="drop the retain CE term (pure NegGrad: ascent on forget set only)")
+    parser.add_argument( "--forget_weight", type=float, default=1.0,
+        help="weight (lambda_f) on the 'flat' forget term")
+    parser.add_argument( "--exclude_forget_class_from_retain", action="store_true",
+        help="Lever P1: remove the forget class (ALL domains) from the retain CE, "
+             "so nothing reinforces it while forgetting propagates. Default OFF (v1).")
     parser.add_argument( "--domain_class_divided", action="store_true", help="default is False")
     parser.add_argument( "--lmd_domain_loss", type=float, default=1.0)
     parser.add_argument( "--use_domain_cls_loss", action="store_true", help="default is False")

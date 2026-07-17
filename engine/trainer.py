@@ -346,6 +346,8 @@ class TrainerDF(SimpleTrainer_):
         self.use_domain_classifier_loss = getattr(cfg, "USE_DOMAIN_CLASIFIER_LOSS", getattr(cfg, "USE_DOMAIN_CLASSIFIER_LOSS", True))
         self.forget_loss_type = getattr(cfg, "FORGET_LOSS_TYPE", "entropy")
         self.no_retain_loss = getattr(cfg, "NO_RETAIN_LOSS", False)
+        self.forget_weight = getattr(cfg, "FORGET_WEIGHT", 1.0)
+        self.exclude_forget_class_from_retain = getattr(cfg, "EXCLUDE_FORGET_CLASS_FROM_RETAIN", False)
         self.kernel = "gaussian"
         self.is_domain_divided = True
         self.domain_class_divided = False
@@ -414,9 +416,9 @@ class TrainerDF(SimpleTrainer_):
 
         model_out = self.model(image)
         if len(model_out) == 5:
-            output, img_feat, _, domain_output, _ = model_out
+            output, img_feat, txt_feat, domain_output, _ = model_out
         else:
-            output, img_feat, _, _ = model_out
+            output, img_feat, txt_feat, _ = model_out
             domain_output = None
 
         entropy = Entropy()
@@ -434,7 +436,13 @@ class TrainerDF(SimpleTrainer_):
             del_class_index = [self.classnames.index(c) for c in self.del_class_list if c in self.classnames]
             class_part = torch.isin(label, torch.tensor(del_class_index).to(self.device))
             del_domain_mask = domain_part & class_part
-            prv_domain_mask = ~del_domain_mask
+            if self.exclude_forget_class_from_retain:
+                # Lever P1: forget class gets NO retain gradient in ANY domain
+                prv_domain_mask = ~class_part
+            else:
+                # v1 default: retain everything except the forget cell
+                # (incl. the forget class in other domains — the anchor stays ON)
+                prv_domain_mask = ~del_domain_mask
         else:
             # Original behaviour: forget entire domain
             del_domain_mask = domain_part
@@ -455,14 +463,36 @@ class TrainerDF(SimpleTrainer_):
             if self.forget_loss_type == "neggrad":
                 # NegGrad: gradient ascent on the forget set's CE
                 loss_del = F.cross_entropy(output[del_domain_mask], label[del_domain_mask])
+            elif self.forget_loss_type == "flat":
+                # Logit-variance minimization: drive all scaled logits equal
+                # (uniform softmax by construction; pulls the target logit down
+                #  toward the mean). Scaled by logit_scale so the term is
+                #  magnitude-matched to the retain CE (scale^2 fix).
+                model_ = self.model.module if hasattr(self.model, "module") else self.model
+                s = img_feat[del_domain_mask] @ txt_feat.t()
+                loss_del = (model_.logit_scale.exp() * s).var(dim=1).mean()
             else:
                 loss_del = entropy(output[del_domain_mask])
 
-        if self.no_retain_loss:
-            # pure NegGrad: ascent on forget set only, no retain term
-            loss = -loss_del if isinstance(loss_del, torch.Tensor) else 0
+        # ---- combine (sign depends on objective) ----
+        # entropy / neggrad are MAXIMIZED (subtracted); flat is MINIMIZED (added)
+        base = 0 if self.no_retain_loss else loss_prv
+        if isinstance(loss_del, torch.Tensor):
+            if self.forget_loss_type == "flat":
+                loss = base + self.forget_weight * loss_del
+            else:
+                loss = base - loss_del
         else:
-            loss = loss_prv - loss_del
+            loss = base
+
+        # magnitude sanity log: first 8 batches that CONTAIN a forget image
+        # (~94% of batches have none, so chronological logging would mislead)
+        if isinstance(loss_del, torch.Tensor) and getattr(self, "_forgetlog_n", 0) < 8:
+            self._forgetlog_n = getattr(self, "_forgetlog_n", 0) + 1
+            print(f"[FORGET-BATCH {self._forgetlog_n}/8] n_forget={int(del_domain_mask.sum())} "
+                  f"loss_prv={float(loss_prv):.4f} "
+                  f"loss_forget[{self.forget_loss_type}]={float(loss_del):.4f} "
+                  f"(weight={self.forget_weight})", flush=True)
 
         ######################################################################
         # domain loss (domain classifier loss, nearest neighbor loss or both)
