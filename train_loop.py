@@ -241,10 +241,11 @@ if __name__ == "__main__":
     parser.add_argument( "--num_shots", type=int, default=-1)
     parser.add_argument( "--forget_domains", default=[], nargs="*", help="input forget domains like '--forget_domains domain1 domain2 ..' ")
     parser.add_argument( "--forget_classes", default=[], nargs="*", help="class names to forget within the forget domains, e.g. '--forget_classes tiger lion'")
-    parser.add_argument( "--forget_loss_type", type=str, default="entropy", choices=["entropy", "neggrad", "flat", "suppress_flat"],
+    parser.add_argument( "--forget_loss_type", type=str, default="entropy", choices=["entropy", "neggrad", "flat", "suppress_flat", "suppress_entropy"],
         help="forget objective: 'entropy' = entropy maximization (ADU-style), 'neggrad' = gradient ascent on forget-set CE, "
              "'flat' = minimize variance of scaled logits (uniform-by-construction, leak-free target), "
-             "'suppress_flat' (P2) = suppress target logit (NegGrad-strength) + flatten the non-target logits (leak-free forgetting)")
+             "'suppress_flat' (P2) = suppress target logit (NegGrad-strength) + flatten non-target logits (variance-min, feature-level), "
+             "'suppress_entropy' (P2b) = suppress target logit + maximize non-target entropy (output-level, avoids feature funnelling)")
     parser.add_argument( "--no_retain_loss", action="store_true",
         help="drop the retain CE term (pure NegGrad: ascent on forget set only)")
     parser.add_argument( "--forget_weight", type=float, default=1.0,

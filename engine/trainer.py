@@ -500,6 +500,25 @@ class TrainerDF(SimpleTrainer_):
                 self._sf_suppress = float(loss_suppress)
                 self._sf_flat = float(loss_flat)
                 loss_del = -loss_suppress + self.flat_weight * loss_flat
+            elif self.forget_loss_type == "suppress_entropy":
+                # P2b: identical bounded suppression, but the anti-leak term is
+                # OUTPUT-level entropy-MAX on the non-target softmax instead of
+                # feature-level variance-min. The entropy gradient SATURATES as
+                # the distribution flattens, so it spreads the freed mass without
+                # the aggressive feature funnelling that variance-min causes
+                # (which we observed re-peaking onto 'cat' at high flat_weight).
+                L = output[del_domain_mask]
+                tgt = label[del_domain_mask]
+                ce = F.cross_entropy(L, tgt, reduction="none")
+                loss_suppress = ce.clamp(max=self.suppress_cap).mean()
+                keep = torch.ones_like(L, dtype=torch.bool)
+                keep[torch.arange(L.shape[0], device=L.device), tgt] = False
+                L_rest = L[keep].view(L.shape[0], L.shape[1] - 1)   # non-target logits
+                logp = F.log_softmax(L_rest, dim=1)
+                H = -(logp.exp() * logp).sum(dim=1).mean()  # non-target entropy, MAXIMIZE
+                self._sf_suppress = float(loss_suppress)
+                self._sf_flat = float(H)                    # store H in the same log slot
+                loss_del = -loss_suppress - self.flat_weight * H
             else:
                 loss_del = entropy(output[del_domain_mask])
 
@@ -509,7 +528,7 @@ class TrainerDF(SimpleTrainer_):
         if isinstance(loss_del, torch.Tensor):
             # 'flat' and 'suppress_flat' have their signs baked in -> ADD;
             # 'entropy'/'neggrad' are maximized -> SUBTRACT.
-            if self.forget_loss_type in ("flat", "suppress_flat"):
+            if self.forget_loss_type in ("flat", "suppress_flat", "suppress_entropy"):
                 loss = base + self.forget_weight * loss_del
             else:
                 loss = base - loss_del
@@ -521,9 +540,10 @@ class TrainerDF(SimpleTrainer_):
         if isinstance(loss_del, torch.Tensor) and getattr(self, "_forgetlog_n", 0) < 8:
             self._forgetlog_n = getattr(self, "_forgetlog_n", 0) + 1
             extra = ""
-            if self.forget_loss_type == "suppress_flat":
+            if self.forget_loss_type in ("suppress_flat", "suppress_entropy"):
+                term = "flat(var)" if self.forget_loss_type == "suppress_flat" else "ent(H)"
                 extra = (f" [suppress(CE)={self._sf_suppress:.4f} "
-                         f"flat(var)={self._sf_flat:.4f} flat_w={self.flat_weight}]")
+                         f"{term}={self._sf_flat:.4f} flat_w={self.flat_weight}]")
             print(f"[FORGET-BATCH {self._forgetlog_n}/8] n_forget={int(del_domain_mask.sum())} "
                   f"loss_prv={float(loss_prv):.4f} "
                   f"loss_forget[{self.forget_loss_type}]={float(loss_del):.4f} "
