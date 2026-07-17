@@ -347,6 +347,9 @@ class TrainerDF(SimpleTrainer_):
         self.forget_loss_type = getattr(cfg, "FORGET_LOSS_TYPE", "entropy")
         self.no_retain_loss = getattr(cfg, "NO_RETAIN_LOSS", False)
         self.forget_weight = getattr(cfg, "FORGET_WEIGHT", 1.0)
+        # P2 (suppress_flat): relative strength of the flatten (anti-leak) term
+        # vs the suppression (NegGrad-strength push-down) term.
+        self.flat_weight = getattr(cfg, "FLAT_WEIGHT", 1.0)
         self.exclude_forget_class_from_retain = getattr(cfg, "EXCLUDE_FORGET_CLASS_FROM_RETAIN", False)
         self.kernel = "gaussian"
         self.is_domain_divided = True
@@ -471,6 +474,24 @@ class TrainerDF(SimpleTrainer_):
                 model_ = self.model.module if hasattr(self.model, "module") else self.model
                 s = img_feat[del_domain_mask] @ txt_feat.t()
                 loss_del = (model_.logit_scale.exp() * s).var(dim=1).mean()
+            elif self.forget_loss_type == "suppress_flat":
+                # P2: SUPPRESS the target logit hard (NegGrad-strength push-down
+                #     so forgetting actually happens & propagates across domains)
+                #     + FLATTEN the remaining non-target logits (so the freed
+                #     probability mass spreads uniformly instead of piling onto
+                #     the nearest neighbour -> leak-free by construction).
+                L = output[del_domain_mask]                 # (n, C) scaled logits
+                tgt = label[del_domain_mask]                # all = the forget class
+                loss_suppress = F.cross_entropy(L, tgt)     # MAXIMIZE (push target down)
+                keep = torch.ones_like(L, dtype=torch.bool)
+                keep[torch.arange(L.shape[0], device=L.device), tgt] = False
+                L_rest = L[keep].view(L.shape[0], L.shape[1] - 1)   # non-target logits
+                loss_flat = L_rest.var(dim=1).mean()        # MINIMIZE (spread the rest)
+                # bake in the internal signs: this whole term is ADDED below, so
+                # minimizing it = maximize suppression + minimize residual variance.
+                self._sf_suppress = float(loss_suppress)
+                self._sf_flat = float(loss_flat)
+                loss_del = -loss_suppress + self.flat_weight * loss_flat
             else:
                 loss_del = entropy(output[del_domain_mask])
 
@@ -478,7 +499,9 @@ class TrainerDF(SimpleTrainer_):
         # entropy / neggrad are MAXIMIZED (subtracted); flat is MINIMIZED (added)
         base = 0 if self.no_retain_loss else loss_prv
         if isinstance(loss_del, torch.Tensor):
-            if self.forget_loss_type == "flat":
+            # 'flat' and 'suppress_flat' have their signs baked in -> ADD;
+            # 'entropy'/'neggrad' are maximized -> SUBTRACT.
+            if self.forget_loss_type in ("flat", "suppress_flat"):
                 loss = base + self.forget_weight * loss_del
             else:
                 loss = base - loss_del
@@ -489,10 +512,14 @@ class TrainerDF(SimpleTrainer_):
         # (~94% of batches have none, so chronological logging would mislead)
         if isinstance(loss_del, torch.Tensor) and getattr(self, "_forgetlog_n", 0) < 8:
             self._forgetlog_n = getattr(self, "_forgetlog_n", 0) + 1
+            extra = ""
+            if self.forget_loss_type == "suppress_flat":
+                extra = (f" [suppress(CE)={self._sf_suppress:.4f} "
+                         f"flat(var)={self._sf_flat:.4f} flat_w={self.flat_weight}]")
             print(f"[FORGET-BATCH {self._forgetlog_n}/8] n_forget={int(del_domain_mask.sum())} "
                   f"loss_prv={float(loss_prv):.4f} "
                   f"loss_forget[{self.forget_loss_type}]={float(loss_del):.4f} "
-                  f"(weight={self.forget_weight})", flush=True)
+                  f"(weight={self.forget_weight}){extra}", flush=True)
 
         ######################################################################
         # domain loss (domain classifier loss, nearest neighbor loss or both)

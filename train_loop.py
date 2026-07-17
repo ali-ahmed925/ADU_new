@@ -95,6 +95,7 @@ def extend_cfg(cfg, args):
     cfg.FORGET_LOSS_TYPE = getattr(args, "forget_loss_type", "entropy")
     cfg.NO_RETAIN_LOSS = getattr(args, "no_retain_loss", False)
     cfg.FORGET_WEIGHT = getattr(args, "forget_weight", 1.0)
+    cfg.FLAT_WEIGHT = getattr(args, "flat_weight", 1.0)
     cfg.EXCLUDE_FORGET_CLASS_FROM_RETAIN = getattr(args, "exclude_forget_class_from_retain", False)
     cfg.EVAL_ONLY = args.eval_only
     cfg.DATASET.SEED = args.seed
@@ -239,13 +240,16 @@ if __name__ == "__main__":
     parser.add_argument( "--num_shots", type=int, default=-1)
     parser.add_argument( "--forget_domains", default=[], nargs="*", help="input forget domains like '--forget_domains domain1 domain2 ..' ")
     parser.add_argument( "--forget_classes", default=[], nargs="*", help="class names to forget within the forget domains, e.g. '--forget_classes tiger lion'")
-    parser.add_argument( "--forget_loss_type", type=str, default="entropy", choices=["entropy", "neggrad", "flat"],
+    parser.add_argument( "--forget_loss_type", type=str, default="entropy", choices=["entropy", "neggrad", "flat", "suppress_flat"],
         help="forget objective: 'entropy' = entropy maximization (ADU-style), 'neggrad' = gradient ascent on forget-set CE, "
-             "'flat' = minimize variance of scaled logits (uniform-by-construction, leak-free target)")
+             "'flat' = minimize variance of scaled logits (uniform-by-construction, leak-free target), "
+             "'suppress_flat' (P2) = suppress target logit (NegGrad-strength) + flatten the non-target logits (leak-free forgetting)")
     parser.add_argument( "--no_retain_loss", action="store_true",
         help="drop the retain CE term (pure NegGrad: ascent on forget set only)")
     parser.add_argument( "--forget_weight", type=float, default=1.0,
-        help="weight (lambda_f) on the 'flat' forget term")
+        help="weight (lambda_f) on the whole forget term ('flat' / 'suppress_flat')")
+    parser.add_argument( "--flat_weight", type=float, default=1.0,
+        help="P2 only: relative weight of the flatten (anti-leak) term vs the suppression term in 'suppress_flat'")
     parser.add_argument( "--exclude_forget_class_from_retain", action="store_true",
         help="Lever P1: remove the forget class (ALL domains) from the retain CE, "
              "so nothing reinforces it while forgetting propagates. Default OFF (v1).")
