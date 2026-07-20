@@ -63,7 +63,10 @@ import trainers.independent_VLAdapter_Prompt  # noqa: F401
 from train_loop import setup_cfg
 
 # Paper-exact reproduction hyper-parameters (see run_domainnet_mini.sh).
-DATA_ROOT = "/home/owais/machine unlearning/ebm_unlearning/data/domainnet"
+# Data root defaults to ~/machine unlearning/... (portable across machines);
+# override with --root if your layout differs.
+DATA_ROOT = osp.join(os.path.expanduser("~"),
+                     "machine unlearning", "ebm_unlearning", "data", "domainnet")
 DATASET_CFG = "configs/datasets/domainnet_mini_paper_df.yaml"
 TRAINER_CFG = "configs/trainers/vit_b16_ep50.yaml"  # paper config: bs=8, 50ep
 DOMAINLOSS_WEIGHT = 30.0  # gamma
@@ -78,7 +81,7 @@ def build_args(cli):
     """
     return SimpleNamespace(
         # paths / core
-        root=DATA_ROOT,
+        root=cli.root,
         output_dir=cli.output_dir,
         resume="",
         seed=cli.seed,
@@ -236,6 +239,9 @@ def main():
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--heldout_num", type=int, default=26)
     p.add_argument("--heldout_seed", type=int, default=1234)
+    p.add_argument("--root", type=str, default=DATA_ROOT,
+                   help="dataset root containing DomainNet/splits_mini/ "
+                        f"(default: {DATA_ROOT})")
     p.add_argument("--output-dir", type=str,
                    default=osp.join(os.path.expanduser("~"),
                                     "adu_results", "phase0_sketch"))
