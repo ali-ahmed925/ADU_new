@@ -125,7 +125,12 @@ def extend_cfg(cfg, args):
 
     cfg.TRAINER.IVLP.PROMPT_DEPTH_VISION = 9  
     cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT = 9  
-    cfg.DATASET.SUBSAMPLE_CLASSES = "all"  
+    cfg.DATASET.SUBSAMPLE_CLASSES = "all"
+
+    # Phase-0 open-vocabulary diagnostic: hold out N classes from TRAIN only
+    # (test keeps all 126 classes / text anchors). Default 0 => stock ADU.
+    cfg.DATASET.HELDOUT_NUM = getattr(args, "heldout_num", 0)
+    cfg.DATASET.HELDOUT_SEED = getattr(args, "heldout_seed", 1234)
 
 def setup_cfg(args):
     cfg = get_cfg_default()
@@ -278,6 +283,11 @@ if __name__ == "__main__":
     parser.add_argument( "--dataset_name", type=str, default="")
     parser.add_argument( "--domainloss_weight", type=float, default=0.0)
     parser.add_argument( "--mmd_weight", type=float, default=0.0)
+    parser.add_argument( "--heldout_num", type=int, default=0,
+        help="Phase-0 diagnostic: number of classes to hold out of TRAINING only "
+             "(test keeps all classes/text anchors). 0 = stock ADU.")
+    parser.add_argument( "--heldout_seed", type=int, default=1234,
+        help="Seed selecting which classes are held out (fixed across model seeds).")
     parser.add_argument( "--run_forget_domains", default=[], nargs="*",
         help="Run only this specific forget-domain combination (e.g. --run_forget_domains sketch). "
              "If empty, runs the full power-set of all domains (paper default).")

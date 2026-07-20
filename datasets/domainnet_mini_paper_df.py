@@ -39,7 +39,33 @@ class DomainNetMiniPaperDF(DatasetBase):
         num_shots = cfg.DATASET.NUM_SHOTS
         train_x = self._generate_fewshot(train_x, num_shots, seed=cfg.DATASET.SEED)
 
+        # NOTE: DatasetBase derives num_classes/classnames from train_x. We call
+        # super().__init__ with the FULL 126-class few-shot set FIRST, so the
+        # model always keeps 126 text anchors, then (optionally) drop the
+        # held-out classes from train_x ONLY. This is the Phase-0 open-vocabulary
+        # diagnostic: train on a subset of classes, but keep every class's text
+        # prompt available at test so we can ask whether domain-forgetting
+        # transfers to classes never seen during training.
         super().__init__(train_x=train_x, val=val, test=test)
+
+        # Held-out-class split (default OFF -> byte-identical to stock ADU).
+        heldout_num = int(getattr(cfg.DATASET, "HELDOUT_NUM", 0) or 0)
+        self.heldout_labels = []
+        if heldout_num > 0:
+            heldout_seed = int(getattr(cfg.DATASET, "HELDOUT_SEED", 1234))
+            all_labels = sorted({it.label for it in train_x})
+            rng = random.Random(heldout_seed)
+            heldout = set(rng.sample(all_labels, heldout_num))
+            self.heldout_labels = sorted(heldout)
+            kept = [it for it in train_x if it.label not in heldout]
+            self._train_x = kept  # classnames/num_classes already fixed at 126
+            print(
+                f"[HELDOUT] seed={heldout_seed}: holding out {heldout_num} classes "
+                f"from TRAIN only -> {sorted(heldout)}\n"
+                f"[HELDOUT] classnames kept at {len(self.classnames)}; "
+                f"train_x: {len(train_x)} -> {len(kept)} items "
+                f"({len(all_labels) - heldout_num} seen classes trained)"
+            )
 
     def _read_data(self, input_domains, split="train"):
         items = []
