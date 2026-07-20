@@ -549,17 +549,22 @@ class TrainerDF(SimpleTrainer_):
             model_ = self.model.module if hasattr(self.model, "module") else self.model
             f_img = model_.image_encoder(imgs.type(model_.dtype))[0]
             f_img = f_img / f_img.norm(dim=-1, keepdim=True)
-            Lf = model_.logit_scale.exp() * f_img @ txt_feat.t()   # (m, C) scaled logits
+            # fp32 for all the entropy math: in fp16 an additive epsilon like 1e-12
+            # underflows to 0, so once suppression drives a probability to exactly
+            # 0 we hit log(0)=-inf -> 0*-inf = NaN (observed at ~epoch 34). Using
+            # log_softmax on fp32 logits never takes the log of a raw zero.
+            Lf = (model_.logit_scale.exp() * f_img @ txt_feat.t()).float()   # (m, C)
             tf = self._forget_labels[idx]                     # (m,) all = forget class
             ce = F.cross_entropy(Lf, tf, reduction="none")
             loss_suppress = ce.clamp(max=self.suppress_cap).mean()
             keep = torch.ones_like(Lf, dtype=torch.bool)
             keep[torch.arange(Lf.shape[0], device=Lf.device), tf] = False
             Lrest = Lf[keep].view(Lf.shape[0], Lf.shape[1] - 1)   # (m, C-1) non-target
-            p = F.softmax(Lrest, dim=1)
-            H_cond = -(p * torch.log(p + 1e-12)).sum(dim=1).mean()    # per-image (maximize)
-            p_bar = p.mean(dim=0)                                     # marginal over the m images
-            H_marg = -(p_bar * torch.log(p_bar + 1e-12)).sum()       # marginal (maximize)
+            logp = F.log_softmax(Lrest, dim=1)                       # stable
+            p = logp.exp()
+            H_cond = -(p * logp).sum(dim=1).mean()                   # per-image (maximize)
+            p_bar = p.mean(dim=0).clamp_min(1e-9)                    # marginal over the m images
+            H_marg = -(p_bar * p_bar.log()).sum()                    # marginal (maximize)
             self._sf_suppress = float(loss_suppress)
             self._sf_flat = float(H_cond)
             self._sf_marg = float(H_marg)
