@@ -99,6 +99,7 @@ def extend_cfg(cfg, args):
     cfg.SUPPRESS_CAP = getattr(args, "suppress_cap", 6.0)
     cfg.MARG_WEIGHT = getattr(args, "marg_weight", 1.0)
     cfg.FORGET_POOL_SIZE = getattr(args, "forget_pool_size", 0)
+    cfg.FORGET_CHUNK = getattr(args, "forget_chunk", 0)
     cfg.EXCLUDE_FORGET_CLASS_FROM_RETAIN = getattr(args, "exclude_forget_class_from_retain", False)
     cfg.EVAL_ONLY = args.eval_only
     cfg.DATASET.SEED = args.seed
@@ -254,6 +255,9 @@ if __name__ == "__main__":
     parser.add_argument( "--forget_pool_size", type=int, default=0,
         help="P2c only: number of forget images for the dedicated forget forward (0=use the 8-shot set). "
              ">0 loads that many forget (class,domain) images from the split so the batch-marginal is non-degenerate; retain stays 8-shot")
+    parser.add_argument( "--forget_chunk", type=int, default=0,
+        help="P2c only: how many pool images to forward PER STEP (0 = all). Decouples pool "
+             "diversity from GPU memory; a random chunk each step also gives an unbiased marginal estimate")
     parser.add_argument( "--no_retain_loss", action="store_true",
         help="drop the retain CE term (pure NegGrad: ascent on forget set only)")
     parser.add_argument( "--forget_weight", type=float, default=1.0,

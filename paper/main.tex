@@ -1,0 +1,385 @@
+% =============================================================================
+%  VLM4RWD @ NeurIPS 2026 -- workshop submission (8 pages excl. refs/appendix)
+%  Double-blind: keep anonymous.
+%
+%  NOTE: swap the preamble for the official neurips_2026.sty when available:
+%      \usepackage[final]{neurips_2026}   % camera-ready
+%      \usepackage{neurips_2026}          % anonymous submission
+%  The article-based preamble below compiles standalone in the meantime.
+% =============================================================================
+\documentclass[10pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage[hidelinks]{hyperref}
+\usepackage{natbib}
+
+% --- visible TODO markers; set to \relax before submitting ---
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+\newcommand{\pending}{\textcolor{red}{--}}
+
+\title{Forgetting Without Hallucinating:\\
+Calibrated Concept Unlearning in Vision--Language Models}
+\author{Anonymous Submission}
+\date{}
+
+\begin{document}
+\maketitle
+
+% =============================================================================
+\begin{abstract}
+Concept unlearning methods for vision--language models are evaluated almost
+entirely by how far accuracy on the erased concept falls. We show that this
+number hides \emph{how} the model fails. A standard gradient-ascent unlearner
+drives accuracy on the target concept to zero across all domains, but does so by
+\emph{confidently} assigning those inputs to a single semantic neighbour: its
+predictions on forgotten inputs have an effective support of roughly
+$4.5$ classes out of $126$. The erasure succeeds and the model hallucinates, and
+the standard metric cannot distinguish the two.
+We attribute this to \emph{unbounded} suppression: gradient ascent on the target
+class drives the image feature into a degenerate region of the representation,
+after which the freed probability mass collapses onto whichever class is
+nearest. We propose a minimal correction --- suppression bounded by a cap,
+combined with a redistribution term --- together with a retain-set construction
+that allows forgetting supervised in a single domain to propagate to domains the
+forgetting loss never observes. On Mini-DomainNet with CLIP ViT-B/16, our method
+matches gradient ascent on erasure ($0\%$ target accuracy in all four domains)
+and on retention ($85.2\%$), while the model's predictions on forgotten inputs
+remain calibrated: mean confidence $22.1\%$ and an effective support of $\sim
+37$ classes.
+\todo{add detectability AUROC sentence once measured}
+\end{abstract}
+
+% =============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Vision--language models such as CLIP are increasingly deployed as general-purpose
+recognisers in settings where their behaviour must be revisable after training.
+Regulatory requirements, licensing disputes, and safety constraints can all
+demand that a specific concept be removed from a deployed model, and retraining
+from scratch is rarely practical. This has motivated a body of work on
+\emph{concept unlearning} for vision--language models, including the
+domain-agnostic setting in which a concept must be erased not only where it was
+observed but across every visual domain the model encounters. We adopt that
+setting rather than propose it; our concern is not with how erasure is achieved
+but with what the model does \emph{afterwards}.
+
+Almost universally, unlearning is judged by a single quantity: accuracy on the
+erased concept, reported as it falls toward zero, alongside accuracy on the
+retained classes. This pair of numbers answers whether the concept is still
+recognised and whether the rest of the model survived. It is silent on a third
+question that matters at deployment time: when the unlearned model is shown an
+instance of the erased concept, \emph{what does it predict instead, and with what
+confidence?} A model that has genuinely lost a concept and a model that has
+merely been redirected to a confident substitute produce identical forget
+accuracy.
+
+We find that this distinction is not hypothetical. Applying a standard
+gradient-ascent unlearning objective to CLIP ViT-B/16 on Mini-DomainNet erases
+the target concept completely --- accuracy falls to $0\%$ in all four domains ---
+while the model's predictions on those same inputs remain sharply peaked, with
+an effective support of roughly $4.5$ classes out of $126$ and the majority of
+the freed probability mass landing on a single semantic neighbour. The unlearned
+model does not abstain; it confidently asserts a specific wrong label. By the
+reported metric the procedure is a complete success, and by the model's own
+output it is a fluent, high-confidence error --- precisely the kind of
+unsupported assertion that undermines reliability in deployment.
+
+We trace this behaviour to the unbounded nature of the suppression signal.
+Gradient ascent on the target class drives the image feature to be increasingly
+anti-aligned with the target text embedding, and CLIP's learned temperature
+amplifies the effect; in our runs the objective diverges and the representation
+degrades. Once the representation is degraded, the probability freed by
+suppression has nowhere to go except onto whichever class remains nearest, which
+is what produces the confident substitute. This suggests that the choice is not
+between forgetting and calibration, but that calibration is lost as a
+\emph{side effect} of how aggressively forgetting is applied.
+
+Acting on this, we study a minimal correction: the same cross-entropy ascent,
+but \emph{bounded} by a cap that halts the push once the target's probability
+falls below chance, combined with terms that encourage the freed mass to spread
+both within and across inputs. We pair this with a retain-set construction in
+which the target concept is withheld from every domain, which is what allows
+forgetting supervised in one domain to reach domains the forgetting loss never
+observes. On Mini-DomainNet the resulting model matches gradient ascent on both
+quantities the literature reports --- $0\%$ target accuracy in all four domains,
+$85.2\%$ retain accuracy --- while its predictions on forgotten inputs remain
+uncertain: mean confidence $22.1\%$ and an effective support of $\sim\!37$
+classes. The two methods are indistinguishable under the standard evaluation and
+behave very differently under inspection.
+
+We view the practical consequence as the more important one. A model that is
+uncertain on erased concepts exposes those inputs to ordinary confidence-based
+monitoring; a model that is confidently wrong routes them silently into
+downstream decisions. Reporting only forget accuracy cannot distinguish these
+two deployments.
+
+\paragraph{Contributions.}
+\begin{itemize}
+  \item We show that a standard unlearning objective achieves complete
+        cross-domain erasure while producing \emph{confidently incorrect}
+        predictions on the erased concept --- a failure mode that forget
+        accuracy, the field's primary metric, cannot detect.
+  \item We attribute this to unbounded suppression degrading the representation,
+        and show that bounding the suppression preserves the model's capacity to
+        express uncertainty at equal erasure and retention.
+        \todo{requires the cap sweep, Table~\ref{tab:ablation}(b)}
+  \item We report, alongside forget and retain accuracy, the confidence and
+        effective support of predictions on erased inputs, and argue these should
+        accompany any unlearning result.
+  \item We evaluate over \todo{$N$} concepts and \todo{$S$} seeds, stratified by
+        semantic neighbourhood structure, and include a retain-only control
+        isolating the contribution of the suppression term.
+\end{itemize}
+
+% =============================================================================
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Concept and domain unlearning in CLIP.}
+\todo{Open with prior work honestly and explicitly. Cross-domain / domain-agnostic
+concept removal has been posed before; we do not claim the problem setting. Cite
+and describe: null-space projection for selective and domain-agnostic unlearning;
+CLIPErase; zero-shot CLIP class forgetting via text--image space adaptation
+(TMLR 2025) and via synthetic samples (WACV 2025); null-space calibration (UNSC).
+State plainly what is different here: we study the \emph{output behaviour} of
+unlearned models rather than proposing a new erasure mechanism.}
+
+\paragraph{Approximate unlearning.}
+\todo{gradient ascent / NegGrad lineage; SISA and exact retraining; note that
+evaluation in this literature is dominated by forget/retain accuracy and MIA.}
+
+\paragraph{Calibration and failure-mode analysis.}
+\todo{output entropy and confidence as calibration measures; effective support
+size (perplexity). Be explicit that these are standard quantities, not ours.}
+
+% =============================================================================
+\section{Setup}
+\label{sec:setup}
+
+\paragraph{Model.} CLIP ViT-B/16 with the pretrained backbone frozen. We train
+only the prompt-tuning components: $8$ learnable context tokens on each of the
+text and vision branches inserted into the first $9$ layers, bottleneck
+adapters, and an instance-wise prompt generator (cross-attention at layer $9$).
+No pretrained CLIP weight is modified.
+
+\paragraph{Data.} Mini-DomainNet: $126$ classes over $4$ domains (clipart,
+painting, real, sketch), $8$-shot per (class, domain) for the retain set.
+
+\paragraph{Task.} Given a target concept observed in a \emph{single} domain
+(e.g.\ \texttt{tiger} in \emph{sketch}), the model must fail to recognise that
+concept in \emph{all four} domains while the remaining $125$ classes are
+preserved in every domain.
+
+\paragraph{Evaluation set.} All metrics are computed on held-out images: every
+train-split image not used for training, with the few-shot set and the forget
+pool excluded by path. \todo{state final counts}
+
+% =============================================================================
+\section{Method}
+\label{sec:method}
+
+Each step draws from two streams: the $8$-shot retain loader, and a
+\emph{forget pool} of up to $100$ images of the target concept from the forget
+domain (a random subset of $24$ is forwarded per step, which preserves pool
+diversity while bounding memory and giving an unbiased per-step estimate of the
+marginal term).
+
+The objective is $\mathcal{L} = \mathcal{L}_{\text{ret}} + \lambda_f
+\mathcal{L}_{\text{forget}}$.
+
+\paragraph{Retain term.} Cross-entropy on the retain batch, with the target
+class \emph{excluded from every domain}. The model is trained on the other $125$
+classes in all four domains and receives no positive signal for the target
+anywhere.
+
+\paragraph{Forget term.} On forget images, with $\ell$ the scaled logits and $t$
+the target index:
+\begin{align}
+\mathcal{L}_{\text{sup}} &= \min\!\big(\mathrm{CE}(\ell, t),\; \tau\big)
+  && \text{(maximised; \emph{bounded} suppression)} \label{eq:sup}\\
+\mathcal{H}_{\text{cond}} &= \tfrac{1}{m}\textstyle\sum_i H\!\big(p_i^{\neg t}\big)
+  && \text{(maximised; per-image spread)} \label{eq:hcond}\\
+\mathcal{H}_{\text{marg}} &= H\!\big(\tfrac{1}{m}\textstyle\sum_i p_i^{\neg t}\big)
+  && \text{(maximised; across-image spread)} \label{eq:hmarg}
+\end{align}
+so that $\mathcal{L}_{\text{forget}} = -\mathcal{L}_{\text{sup}}
+- \lambda_c \mathcal{H}_{\text{cond}} - \lambda_m \mathcal{H}_{\text{marg}}$,
+where $p_i^{\neg t}$ is the softmax over non-target classes.
+
+\paragraph{Why the cap.} Equation~\eqref{eq:sup} is gradient ascent on the target
+cross-entropy --- the standard forgetting signal --- with one modification. Left
+unbounded, ascent drives the image feature to be maximally anti-aligned with the
+target text embedding; CLIP's learned temperature ($\approx\!100$) amplifies
+this, and in our runs the loss diverged to $-195$ and degraded the model. The cap
+$\tau=6$ halts the push once the target's probability is $\approx 0.25\%$, below
+chance ($1/126 \approx 0.79\%$), leaving the representation intact. Our claim is
+that this is precisely what preserves the model's capacity to spread the freed
+probability rather than collapsing it.
+
+\paragraph{Why the target is excluded from retain everywhere.} This is what lets
+forgetting cross domains. Retaining the target in the untouched domains supplies
+a restoring gradient and confines forgetting to the supervised domain; removing
+it does not. All domains are scored against the same text embeddings and share
+the same prompt parameters, so suppression driven by one domain's images
+modifies parameters every domain depends on. Table~\ref{tab:ablation} isolates
+this.
+
+% =============================================================================
+\section{Experiments}
+\label{sec:exp}
+
+\paragraph{Protocol.} \todo{Final protocol: $N$ concepts $\times$ $S$ seeds,
+identical grid for every method. Concepts stratified by neighbour structure
+(close neighbour / mid / isolated) to test whether the redistribution behaviour
+depends on semantic proximity. Report mean $\pm$ std.}
+
+% -----------------------------------------------------------------------------
+\begin{table}[t]
+\centering
+\caption{Main comparison. Target concept \texttt{tiger}, forget domain
+\emph{sketch}, seed 1, single run. \textbf{All numbers below are from a single
+concept and a single seed and are placeholders for the full grid.}
+``Eff.\ support'' is $\exp(H)$ of the prediction on forgotten inputs (perplexity;
+$126$ = uniform). Higher is more calibrated.}
+\label{tab:main}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+& \multicolumn{2}{c}{Target acc.\ (\%) $\downarrow$}
+& \multicolumn{2}{c}{Preserved (\%) $\uparrow$}
+& \multicolumn{2}{c}{Behaviour on forgotten inputs} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Method & forget dom. & other doms. & retain & neighbour
+& conf.\ (\%) $\downarrow$ & eff.\ support $\uparrow$ \\
+\midrule
+Original (no unlearning)      & 94.9 & \pending & \pending & \pending & \pending & \pending \\
+Retain-only (control)         & \pending & \pending & \pending & \pending & \pending & \pending \\
+Entropy max.\ (ADU-style)     & 53.1 & 91.7 & 85.7 & 91.7 & \pending & \pending \\
+NegGrad + retain              & \textbf{0.0} & 0.3 & $\sim$85 & 93.3 & high & 4.5 \\
+\midrule
+Ours                          & \textbf{0.0} & \textbf{0.0} & 85.2 & 92.0
+                              & \textbf{22.1} & \textbf{37.0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+% -----------------------------------------------------------------------------
+
+\paragraph{Reading Table~\ref{tab:main}.} NegGrad and our method are
+indistinguishable on the metric the literature reports: both erase the concept in
+every domain, both preserve the retain set. They differ entirely in
+\emph{how} the model behaves on the erased concept --- an effective support of
+$4.5$ versus $37$ classes.
+
+\todo{Retain-only row is the control that shows suppression, not exclusion,
+causes the $0\%$. Must be filled before any claim in \S\ref{sec:method} stands.}
+
+% -----------------------------------------------------------------------------
+\begin{table}[t]
+\centering
+\caption{Ablations. \todo{single-seed placeholders; rerun on the full grid.}}
+\label{tab:ablation}
+\small
+\begin{tabular}{lccccc}
+\toprule
+Variant & target (forget dom.) & target (other doms.) & retain
+& conf.\ (\%) & eff.\ support \\
+\midrule
+\multicolumn{6}{l}{\emph{(a) Retain-set construction}}\\
+\quad target kept in retain (anchor on) & 29.5 & 88.0 & 86.0 & 79.5 & 2.5 \\
+\quad target excluded (ours)            & 0.0  & 0.0  & 85.2 & 22.1 & 37.0 \\
+\midrule
+\multicolumn{6}{l}{\emph{(b) Suppression cap $\tau$}}\\
+\quad $\tau = \infty$ (unbounded)       & \pending & \pending & \pending & \pending & \pending \\
+\quad $\tau = 8$                        & \pending & \pending & \pending & \pending & \pending \\
+\quad $\tau = 6$ (ours)                 & 0.0 & 0.0 & 85.2 & 22.1 & 37.0 \\
+\midrule
+\multicolumn{6}{l}{\emph{(c) Forget-pool size}}\\
+\quad $8$ (few-shot only)               & 0.0 & 0.0 & 85.5 & 57.2 & 6.4 \\
+\quad $100$ (ours)                      & 0.0 & 0.0 & 85.2 & 22.1 & 37.0 \\
+\midrule
+\multicolumn{6}{l}{\emph{(d) Redistribution term}}\\
+\quad variance-min instead of entropy   & 0.0 & 0.0 & 85.7 & 30.2 & 22.1 \\
+\quad per-image entropy only            & 0.0 & 0.0 & 85.5 & 29.1 & 23.2 \\
+\quad + batch-marginal (ours)           & 0.0 & 0.0 & 85.2 & 22.1 & 37.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+% -----------------------------------------------------------------------------
+
+\paragraph{The cap is the load-bearing component.} \todo{This paragraph is the
+paper's central mechanistic claim and is currently \emph{unsupported}. Block (b)
+of Table~\ref{tab:ablation} must be run. Expected: $\tau=\infty$ diverges and
+collapses effective support; bounded $\tau$ preserves it at equal erasure.}
+
+\paragraph{Detectability.} \todo{Because the model is uncertain on forgotten
+inputs, a confidence threshold should separate them from retained inputs. Report
+AUROC for ours vs.\ NegGrad. This is the deployment consequence and the strongest
+answer to ``why does calibration matter here''. Not yet run.}
+
+% =============================================================================
+\section{Analysis}
+\label{sec:analysis}
+
+\paragraph{Where the freed probability goes.}
+\todo{Report the redistribution honestly, against the runner-up reference rather
+than against uniform. Zero-shot CLIP with the target logit masked --- what a
+model without the concept predicts --- concentrates $35.1\%$ on a single class
+(effective support $\sim 6$); ours concentrates $30.2\%$ (effective
+support $\sim 21$). Conclusion to state: residual concentration reflects genuine
+semantic similarity in the data, not a pathology introduced by the method.
+Note also that isotropic features would give $3.4\%$, so this is \emph{not} an
+architectural limit of CLIP --- do not claim that.}
+
+\paragraph{Erasure is shallow.}
+\todo{Subtracting a single fixed bias vector from the logits restores the target
+class as the top-1 prediction for $46.5\%$ of forgotten inputs. Currently
+measured only on our own model with an oracle-estimated offset. Before this
+appears as a claim it needs (i) held-out estimation of the offset and (ii) the
+same probe applied to NegGrad. If it holds on a method we did not design, it is a
+statement about unlearning; otherwise it is a limitation of ours and belongs in
+\S\ref{sec:limits}.}
+
+\paragraph{Negative results.}
+\todo{Appendix material. (i) Feature effective dimensionality does not predict
+redistribution concentration ($3.6$ dims yields a lower concentration than
+$12.3$). (ii) The first two moments of the forget-logit distribution do not
+determine it (TV $=0.218$ against a matched Gaussian). (iii) Flattening the mean
+logit vector makes concentration worse, not better. These rule out the obvious
+mechanistic explanations.}
+
+% =============================================================================
+\section{Limitations}
+\label{sec:limits}
+\begin{itemize}
+  \item Single dataset (Mini-DomainNet) and a single backbone (ViT-B/16).
+  \item We do not compare against null-space projection; no code is available and
+        we judged an unfaithful reimplementation worse than none.
+  \item The suppression term is gradient ascent on cross-entropy, the same family
+        as NegGrad; the bound, not the ascent, is what differs.
+  \item Driving accuracy \emph{below} chance is itself a detectable signature of
+        deliberate erasure.
+  \item \todo{if the recovery probe holds: our erasure is shallow and recoverable.}
+\end{itemize}
+
+% =============================================================================
+\section{Conclusion}
+\todo{Short. Forget accuracy alone is not evidence of good unlearning; the
+behaviour of the model on forgotten inputs is a separate and reportable axis.}
+
+% =============================================================================
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\appendix
+\section{Additional results}
+\todo{negative results; sensitivity to $\lambda_c$ (non-monotone --- larger
+weights increase concentration); per-mode cluster analysis; runner-up reference
+table; compute cost (ours requires training and forget data, unlike training-free
+projection baselines --- state this plainly).}
+
+\end{document}

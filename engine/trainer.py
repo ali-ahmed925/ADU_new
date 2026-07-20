@@ -365,6 +365,12 @@ class TrainerDF(SimpleTrainer_):
         # 'large forget budget, small adapt budget' -- realistic for unlearning,
         # and makes the batch-marginal non-degenerate).
         self.forget_pool_size = getattr(cfg, "FORGET_POOL_SIZE", 0)
+        # P2c: how many of the pool to actually forward per step. 0 = all of it.
+        # Decouples pool DIVERSITY (how many distinct forget images the run sees)
+        # from per-step MEMORY. A stochastic sub-batch also gives an unbiased
+        # marginal estimate rather than repeatedly fitting one fixed set, which
+        # is how the pool-8 run overfit its marginal.
+        self.forget_chunk = getattr(cfg, "FORGET_CHUNK", 0)
         self.exclude_forget_class_from_retain = getattr(cfg, "EXCLUDE_FORGET_CLASS_FROM_RETAIN", False)
         self.kernel = "gaussian"
         self.is_domain_divided = True
@@ -528,9 +534,23 @@ class TrainerDF(SimpleTrainer_):
             # classes. Plus per-image entropy + the same bounded suppression.
             if not hasattr(self, "_forget_pil"):
                 self._build_forget_batch()
-            imgs = torch.stack([self._forget_tfm(p) for p in self._forget_pil]).to(self.device)
-            Lf = self.model(imgs)[0]                          # (m, C) scaled logits
-            tf = self._forget_labels                          # (m,) all = forget class
+            npool = len(self._forget_pil)
+            if self.forget_chunk and 0 < self.forget_chunk < npool:
+                idx = torch.randperm(npool)[: self.forget_chunk].tolist()
+            else:
+                idx = list(range(npool))
+            imgs = torch.stack([self._forget_tfm(self._forget_pil[i]) for i in idx]).to(self.device)
+            # Reuse txt_feat from the retain forward rather than calling self.model()
+            # again: a second full model call re-encodes ALL C class prompts through
+            # the text transformer with gradients, which is the dominant memory cost
+            # of the step (~1.2GB) and is pure waste -- the text features are
+            # identical. Encode only the forget images and score them against the
+            # text features we already have.
+            model_ = self.model.module if hasattr(self.model, "module") else self.model
+            f_img = model_.image_encoder(imgs.type(model_.dtype))[0]
+            f_img = f_img / f_img.norm(dim=-1, keepdim=True)
+            Lf = model_.logit_scale.exp() * f_img @ txt_feat.t()   # (m, C) scaled logits
+            tf = self._forget_labels[idx]                     # (m,) all = forget class
             ce = F.cross_entropy(Lf, tf, reduction="none")
             loss_suppress = ce.clamp(max=self.suppress_cap).mean()
             keep = torch.ones_like(Lf, dtype=torch.bool)

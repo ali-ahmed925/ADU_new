@@ -38,7 +38,7 @@ Read-only. Prints a verdict for each test.
 import argparse
 import os
 import os.path as osp
-from collections import Counter, defaultdict
+from collections import Counter
 
 import numpy as np
 import torch
@@ -117,6 +117,41 @@ def show(title, top, max_share, ent, note=""):
         print(f"  >> {note}")
 
 
+def load_base_clip(cfg, device):
+    """Vanilla zero-shot CLIP: no prompts, no adapters, no InstaPG.
+    This is the 'model that was never unlearned' reference."""
+    from clip import clip as _clip
+    model_path = _clip._download(_clip._MODELS[cfg.MODEL.BACKBONE.NAME])
+    try:
+        m = torch.jit.load(model_path, map_location="cpu").eval()
+        sd = None
+    except RuntimeError:
+        sd = torch.load(model_path, map_location="cpu")
+        m = None
+    design = {"trainer": "IVLP_VL_Adapter_Prompt",
+              "vision_depth": 0, "language_depth": 0,
+              "vision_ctx": 0, "language_ctx": 0,
+              "use_classtoken": False, "use_cross_attention": False,
+              "independent_cross_attention": False,
+              "independent_learnable_vision": False,
+              "insert_layer": 9}
+    return _clip.build_model(sd if sd is not None else m.state_dict(), design).to(device).eval()
+
+
+@torch.no_grad()
+def extract_features_base(model, items, tfm, device, batch=64):
+    dl = DataLoader(ImageListDataset(items, tfm), batch_size=batch,
+                    shuffle=False, num_workers=4, pin_memory=True)
+    feats = []
+    for imgs, _ in dl:
+        f = model.encode_image(imgs.to(device))
+        if isinstance(f, (tuple, list)):
+            f = f[0]
+        f = f / f.norm(dim=-1, keepdim=True)
+        feats.append(f.float().cpu().numpy())
+    return np.concatenate(feats)
+
+
 def kmeans(X, k, iters=50, seed=0):
     """Minimal numpy k-means (avoids a sklearn dependency)."""
     rng = np.random.RandomState(seed)
@@ -147,6 +182,9 @@ def main():
     ap.add_argument("--noise", type=float, default=0.05,
                     help="Test A2 noise scale added to a flat-subspace point")
     ap.add_argument("--clusters", type=int, default=5, help="k for Test D")
+    ap.add_argument("--only-geometry", action="store_true",
+                    help="run ONLY Tests A1/A2 (text geometry). Needs no images and no "
+                         "forgetting to have happened -- runnable on any checkpoint/machine.")
     args = ap.parse_args()
 
     os.makedirs("/tmp/diagnose_sink_tmp", exist_ok=True)
@@ -184,35 +222,13 @@ def main():
     scale = model.logit_scale.exp().item()
     C, d = txt.shape
 
-    # ---- unseen forget-class images across ALL domains ----
-    used = set(it.impath for it in trainer.dm.dataset.train_x)
-    pool_file = osp.join(args.ckpt_dir, "forget_pool.txt")
-    if osp.exists(pool_file):
-        with open(pool_file) as f:
-            used |= set(ln.strip() for ln in f if ln.strip())
-        print(f"== excluding {len(used)} trained images (incl. forget_pool.txt) ==", flush=True)
-
-    items = []
-    for dom in DOMAINS:
-        for p, l in read_split(args.root, dom, "train"):
-            if p not in used and p.split("/")[-2] == args.forget_class:
-                items.append((p, l))
-    print(f"== extracting {len(items)} unseen '{args.forget_class}' images ==", flush=True)
-    F = extract_features(model.image_encoder, dtype, items, tfm, device)   # (n, d)
-
-    L = scale * (F @ txt.T)                    # real forget logits (n, C)
-    real_preds = L.argmax(1)
-    n = len(L)
-
     print("\n" + "=" * 78)
-    print(f"SINK MECHANISM DIAGNOSTICS   (n={n} unseen '{args.forget_class}', C={C})")
+    print(f"SINK MECHANISM DIAGNOSTICS   (C={C} classes, d={d})")
     print("=" * 78)
 
-    top, ms, ent = argmax_summary(real_preds, C, lab2cname)
-    show("REAL (observed sink, the thing we are explaining)", top, ms, ent)
-    real_hist = np.bincount(real_preds, minlength=C) / n
-
     # ---------------- Test A: geometric floor / hubness ----------------
+    # Needs ONLY the text embeddings: no images, and no forgetting need have
+    # happened. Runnable on any checkpoint, any machine.
     rng = np.random.RandomState(0)
     R = rng.randn(args.n_random, d)
     R /= np.linalg.norm(R, axis=1, keepdims=True)
@@ -237,6 +253,42 @@ def main():
          note=("TARGET STATE IS ITSELF SUNK -> the proposed objective cannot reach a "
                "uniform sink even if it fully converges." if ms_a2 > 5 else
                "Target state gives a near-uniform sink -> the objective's goal is reachable."))
+
+    if args.only_geometry:
+        print("\n" + "=" * 78)
+        print("GEOMETRY-ONLY VERDICT")
+        print("=" * 78)
+        print(f"  isotropic-feature floor (A1) : {ms_a:5.1f}%")
+        print(f"  TARGET-state floor      (A2) : {ms_a2:5.1f}%   <-- the number that matters")
+        print(f"  a uniform sink would be      : {100.0 / C:.2f}%")
+        print("\n  If A2 is high, a uniform sink is UNREACHABLE by ANY feature-side objective:")
+        print("  the skew lives in CLIP's text-embedding geometry, not in our features.")
+        print("  If A2 is low, the target is reachable and the mechanism is on our side.\n")
+        return
+
+    # ---- unseen forget-class images across ALL domains (Tests B/C/D) ----
+    used = set(it.impath for it in trainer.dm.dataset.train_x)
+    pool_file = osp.join(args.ckpt_dir, "forget_pool.txt")
+    if osp.exists(pool_file):
+        with open(pool_file) as f:
+            used |= set(ln.strip() for ln in f if ln.strip())
+        print(f"\n== excluding {len(used)} trained images (incl. forget_pool.txt) ==", flush=True)
+
+    items = []
+    for dom in DOMAINS:
+        for p, l in read_split(args.root, dom, "train"):
+            if p not in used and p.split("/")[-2] == args.forget_class:
+                items.append((p, l))
+    print(f"== extracting {len(items)} unseen '{args.forget_class}' images ==", flush=True)
+    doms = np.array([p.split("/")[-3] for p, _ in items])   # domain of each image
+    F = extract_features(model.image_encoder, dtype, items, tfm, device)   # (n, d)
+
+    L = scale * (F @ txt.T)                    # real forget logits (n, C)
+    real_preds = L.argmax(1)
+    n = len(L)
+    real_hist = np.bincount(real_preds, minlength=C) / n
+    top, ms, ent = argmax_summary(real_preds, C, lab2cname)
+    show(f"REAL observed sink (n={n}, the thing we are explaining)", top, ms, ent)
 
     # ---------------- Test B: moment sufficiency ----------------
     mu = L.mean(0)
@@ -275,13 +327,88 @@ def main():
         cnt = Counter(int(x) for x in real_preds[m])
         cls, k_ = cnt.most_common(1)[0]
         dominants.append(cls)
+        dc = Counter(doms[m])
+        dstr = " ".join(f"{d}:{100.0*v/m.sum():.0f}%" for d, v in dc.most_common())
         print(f"  cluster {j}: n={int(m.sum()):5d}  dominant = {lab2cname.get(cls, cls):<20} "
-              f"({100.0*k_/m.sum():5.1f}% of cluster)")
+              f"({100.0*k_/m.sum():5.1f}% of cluster)   domains[{dstr}]")
     uniq = len(set(dominants))
     print("  >> " + (f"MIXTURE STRUCTURE: {uniq} different dominant classes across clusters -> "
                      "global moment control is the wrong tool; the leans are per-mode."
                      if uniq > 1 else
                      "All clusters share ONE dominant class -> a single global lean, not a mixture."))
+
+    # ============ THE RUNNER-UP BASELINE (the correct denominator) ============
+    # Test A measured where ISOTROPIC features land. But forgotten tigers are not
+    # isotropic -- they sit near tiger. The right floor is: where do these SAME
+    # images land under an un-unlearned model once tiger is taken off the table?
+    # That is the information-honest answer to "if not a tiger, then what?".
+    print("\n== loading zero-shot CLIP for the runner-up baseline ==", flush=True)
+    from clip import clip as _clip
+    base = load_base_clip(cfg, device)
+    classnames = [lab2cname[i] for i in range(C)]
+    fc_idx = classnames.index(args.forget_class)
+    tok = _clip.tokenize([f"a photo of a {c.replace('_', ' ')}." for c in classnames]).to(device)
+    with torch.no_grad():
+        tb = base.encode_text(tok)
+        tb = (tb / tb.norm(dim=-1, keepdim=True)).float().cpu().numpy()
+    Fb = extract_features_base(base, items, tfm, device)
+    Lb = Fb @ tb.T
+    base_pred = Lb.argmax(1)
+    Lb_mask = Lb.copy()
+    Lb_mask[:, fc_idx] = -np.inf
+    runner = Lb_mask.argmax(1)                 # 2nd choice of the ORIGINAL model
+
+    base_acc = 100.0 * (base_pred == fc_idx).mean()
+    top_e, ms_e, ent_e = argmax_summary(runner, C, lab2cname)
+    show(f"TEST E: RUNNER-UP baseline -- zero-shot CLIP with '{args.forget_class}' masked out "
+         f"(zero-shot {args.forget_class} acc = {base_acc:.1f}%)", top_e, ms_e, ent_e,
+         note=("OUR SINK IS NOT WORSE THAN NATURAL -> the concentration is what ANY "
+               "tiger-ignorant model does; it is not a pathology of our method."
+               if ms <= ms_e + 2 else
+               f"OUR SINK EXCEEDS THE NATURAL RUNNER-UP by {ms - ms_e:.1f} points -> that "
+               "EXCESS is what our method added, and it is the only part worth reducing."))
+
+    # ---- Test F: is it the runner-up IMAGE BY IMAGE? ----
+    match = 100.0 * (real_preds == runner).mean()
+    rnd = 100.0 * (real_preds == np.random.RandomState(1).permutation(runner)).mean()
+    print(f"\n--- TEST F: per-image agreement with the runner-up ---")
+    print(f"  our prediction == that image's own runner-up : {match:5.1f}%")
+    print(f"  (shuffled control)                           : {rnd:5.1f}%")
+    print("  >> " + ("MECHANISM CONFIRMED: unlearning removes tiger and the image's OWN "
+                     "pre-existing 2nd choice wins. The sink is inherited, not created."
+                     if match > 40 else
+                     "Predictions do NOT follow each image's runner-up -> our method actively "
+                     "redirects images somewhere else; the sink is created by the method."))
+
+    # ---- Test G: text-space adjacency of the forget class ----
+    def neigh(T, tag):
+        sims = T @ T[fc_idx]
+        order = np.argsort(-sims)
+        order = [i for i in order if i != fc_idx][:6]
+        print(f"  {tag:<22}" + ", ".join(f"{lab2cname[i]} {sims[i]:.3f}" for i in order))
+
+    print(f"\n--- TEST G: nearest classes to '{args.forget_class}' in TEXT space ---")
+    neigh(tb, "zero-shot CLIP:")
+    neigh(txt, "our trained head:")
+    print("  >> compare with the observed sink order above; a match means the sink is "
+          "text-space adjacency.")
+
+    # ---- Test H: corrected mean-flattening (NON-TARGET classes only) ----
+    # Test C subtracted the WHOLE mean, which also removes the tiger suppression
+    # (hence tiger came back). The correct counterfactual flattens the mean over
+    # non-target classes only, KEEPING tiger suppressed.
+    nt = np.ones(C, dtype=bool)
+    nt[fc_idx] = False
+    Lh = L.copy()
+    Lh[:, nt] = L[:, nt] - mu[nt][None, :] + mu[nt].mean()
+    top_h, ms_h, ent_h = argmax_summary(Lh.argmax(1), C, lab2cname)
+    show("TEST H: flatten the mean over NON-TARGET classes only (tiger stays suppressed)",
+         top_h, ms_h, ent_h,
+         note=("THE NON-TARGET MEAN LEAN IS THE CAUSE -> a non-target mean-flattening term "
+               "would work (and Test C was the wrong counterfactual)."
+               if ms_h < 0.6 * ms else
+               "Sink survives even with the non-target mean flattened -> the lean is "
+               "per-image/per-mode, not in the population mean."))
 
     # ---------------- verdict ----------------
     print("\n" + "=" * 78)
@@ -293,6 +420,13 @@ def main():
     print(f"  sink after perfect mean-flattening: {ms_c:5.1f}%")
     print(f"  moments 1&2 sufficient?           : {'YES' if tv < 0.15 else 'NO'}  (TV={tv:.3f})")
     print(f"  mixture structure?                : {'YES' if uniq > 1 else 'NO'}")
+    print(f"  NATURAL runner-up sink (Test E)   : {ms_e:5.1f}%   <-- the correct denominator")
+    print(f"  our EXCESS over natural           : {ms - ms_e:+5.1f} points")
+    print(f"  per-image runner-up agreement (F) : {match:5.1f}%")
+    print(f"  sink w/ non-target mean flat (H)  : {ms_h:5.1f}%")
+    print("\n  If the excess is ~0, the sink is inherited from the data geometry, not caused")
+    print("  by the method -- and 'uniform' was never the right target. If the excess is")
+    print("  large, THAT is the well-posed quantity to minimize.")
     print("\n  Build the mu/S objective ONLY if: A2 floor is low, TV is small, and Test C")
     print("  shows the sink drops. Otherwise the mechanism is elsewhere.\n")
 
