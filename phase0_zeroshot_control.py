@@ -36,31 +36,24 @@ from train_loop import setup_cfg
 from engine.dataset_manager import DataManager
 from phase0_restricted_eval import restricted_acc
 from phase0_diagnostic import build_args, DATA_ROOT
+from trainers.independent_VLAdapter_Prompt import load_clip_to_cpu
 
 from clip import clip
 
 
 def load_vanilla_clip(cfg):
-    """Plain CLIP: vision_depth=0 / language_depth=0 disables VPT (clip/model.py
-    sets VPT_shallow=False), use_cross_attention=False disables InstaPG."""
-    backbone_name = cfg.MODEL.BACKBONE.NAME
-    url = clip._MODELS[backbone_name]
-    model_path = clip._download(url)
-    try:
-        model = torch.jit.load(model_path, map_location="cpu").eval()
-        state_dict = None
-    except RuntimeError:
-        state_dict = torch.load(model_path, map_location="cpu")
-        model = None
-    design_details = {
-        "trainer": "IVLP_VL_Adapter_Prompt",
-        "vision_depth": 0, "language_depth": 0,
-        "vision_ctx": 0, "language_ctx": 0,
-        "use_classtoken": False, "use_cross_attention": False,
-        "independent_cross_attention": False, "insert_layer": 0,
-    }
-    sd = state_dict or model.state_dict()
-    return clip.build_model(sd, design_details)
+    """Plain CLIP, built through the repo's OWN loader so every design_details
+    key stays in sync with the codebase. We only clone the cfg and zero the
+    prompt depths: clip/model.py sets VPT_shallow=False when vision_depth==0,
+    and use_cross_attention=False disables InstaPG. Result is stock CLIP."""
+    cfg2 = cfg.clone()
+    cfg2.defrost()
+    cfg2.TRAINER.IVLP.PROMPT_DEPTH_VISION = 0
+    cfg2.TRAINER.IVLP.PROMPT_DEPTH_TEXT = 0
+    cfg2.USE_CROSSATTENTION = False
+    cfg2.INDEPENDENT_CROSS_ATTENTION = False
+    cfg2.freeze()
+    return load_clip_to_cpu(cfg2)
 
 
 @torch.no_grad()
