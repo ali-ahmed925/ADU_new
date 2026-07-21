@@ -78,7 +78,16 @@ def build_args(cli):
 
     Values mirror run_domainnet_mini.sh exactly, plus the held-out flags. The
     only deviations from stock ADU are heldout_num/heldout_seed.
+
+    CONTROL ARM (cli.control=True): removes the unlearning objective entirely --
+    forget loss off ("none") and DDL off (gamma=lambda=0) -- leaving plain
+    prompt tuning on the retain domains. The architecture is deliberately left
+    byte-identical to the ADU arm (InstaPG on, domain-classifier head still
+    built, just contributing zero loss), so the ONLY difference between the two
+    runs is the unlearning objective. That is what makes open-vocabulary damage
+    attributable to unlearning rather than to prompt tuning.
     """
+    control = bool(getattr(cli, "control", False))
     return SimpleNamespace(
         # paths / core
         root=cli.root,
@@ -98,7 +107,8 @@ def build_args(cli):
         # forgetting (ADU baseline path)
         forget_domains=[cli.forget],
         forget_classes=[],
-        forget_loss_type="entropy",       # ADU: L_forget = CE-to-uniform = entropy max
+        # ADU: L_forget = CE-to-uniform = entropy max.  control: no forget term.
+        forget_loss_type=("none" if control else "entropy"),
         no_retain_loss=False,
         forget_weight=1.0,
         flat_weight=1.0,
@@ -107,9 +117,11 @@ def build_args(cli):
         forget_pool_size=0,
         forget_chunk=0,
         exclude_forget_class_from_retain=False,
-        # DDL (paper: gamma=30, lambda=10) + domain classifier
-        domainloss_weight=DOMAINLOSS_WEIGHT,
-        mmd_weight=MMD_WEIGHT,
+        # DDL (paper: gamma=30, lambda=10) + domain classifier.
+        # control: weights zeroed -> domain_cls_loss == 0 exactly, while the
+        # classifier head is still constructed so the architecture matches.
+        domainloss_weight=(0.0 if control else DOMAINLOSS_WEIGHT),
+        mmd_weight=(0.0 if control else MMD_WEIGHT),
         use_domain_cls_loss=True,
         is_domain_divided=True,
         domain_class_divided=False,
@@ -239,6 +251,9 @@ def main():
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--heldout_num", type=int, default=26)
     p.add_argument("--heldout_seed", type=int, default=1234)
+    p.add_argument("--control", action="store_true",
+                   help="CONTROL ARM: prompt tuning WITHOUT unlearning "
+                        "(no forget loss, no DDL). Use a different --output-dir.")
     p.add_argument("--root", type=str, default=DATA_ROOT,
                    help="dataset root containing DomainNet/splits_mini/ "
                         f"(default: {DATA_ROOT})")
@@ -258,9 +273,13 @@ def main():
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
 
+    arm = "CONTROL (prompt tuning, NO unlearning)" if cli.control else "ADU (full unlearning)"
+    print(f"[phase0] ARM: {arm}")
     print(f"[phase0] forget={cli.forget} seed={cli.seed} "
           f"heldout_num={cli.heldout_num} heldout_seed={cli.heldout_seed}")
-    print(f"[phase0] config: {TRAINER_CFG} (paper: bs=8, 50ep, gamma=30, lambda=10)")
+    print(f"[phase0] forget_loss={args.forget_loss_type} "
+          f"gamma={args.domainloss_weight} lambda={args.mmd_weight}")
+    print(f"[phase0] config: {TRAINER_CFG} (paper: bs=8, 50ep)")
 
     trainer = build_trainer(cfg)
 

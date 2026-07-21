@@ -117,6 +117,9 @@ def main():
     p.add_argument("--heldout_num", type=int, default=26)
     p.add_argument("--heldout_seed", type=int, default=1234)
     p.add_argument("--root", type=str, default=DATA_ROOT)
+    p.add_argument("--control", action="store_true",
+                   help="set when evaluating a --control checkpoint, so the cfg "
+                        "used to rebuild the model matches how it was trained")
     p.add_argument("--n_draws", type=int, default=20,
                    help="random 26-subsets of SEEN classes to average over")
     p.add_argument("--output-dir", type=str, required=True,

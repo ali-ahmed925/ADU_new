@@ -523,7 +523,18 @@ class TrainerDF(SimpleTrainer_):
         else :
             loss_prv = F.cross_entropy(output[prv_domain_mask], label[prv_domain_mask])
 
-        if self.forget_loss_type == "suppress_marg":
+        if self.forget_loss_type == "none":
+            # CONTROL ARM: no unlearning objective at all. Forget-domain images
+            # still flow through the batch (so iterations/epoch and the retain-CE
+            # signal stay identical to the ADU run) but contribute zero gradient.
+            # Pair with --domainloss_weight 0 --mmd_weight 0 to also disable DDL:
+            # the result is plain prompt tuning on the retain domains, which is
+            # the baseline needed to attribute open-vocabulary damage to
+            # unlearning rather than to prompt tuning itself.
+            # NOTE: kept as a float (not a Tensor) so the combiner below takes
+            # the `loss = base` path and no forget term is ever added.
+            loss_del = 0.0
+        elif self.forget_loss_type == "suppress_marg":
             # P2c: BATCH-MARGINAL diversity. The 'cat' concentration is an
             # ACROSS-image funnel (all forgotten tigers land on cat), which no
             # per-image term can fix (variance-min and entropy-max both plateau
