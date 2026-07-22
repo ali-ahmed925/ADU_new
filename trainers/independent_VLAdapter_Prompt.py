@@ -287,7 +287,6 @@ class Adapter(nn.Module):
         x = self.fc(x)
         return x.type(self.dtype)
 
-@TRAINER_REGISTRY.register()
 def compute_frozen_class_subspace(cfg, classnames):
     """Orthonormal basis of span(frozen zero-shot text anchors). Computed ONCE.
 
@@ -322,6 +321,7 @@ def compute_frozen_class_subspace(cfg, classnames):
     return basis
 
 
+@TRAINER_REGISTRY.register()
 class IVLP_VL_Adapter_Prompt(TrainerDF):
 
     def check_cfg(self, cfg):
