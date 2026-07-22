@@ -87,7 +87,19 @@ def build_args(cli):
     runs is the unlearning objective. That is what makes open-vocabulary damage
     attributable to unlearning rather than to prompt tuning.
     """
-    control = bool(getattr(cli, "control", False))
+    # Four arms, decomposing the unlearning objective into its two terms.
+    #   adu         : entropy forget loss + DDL      (the published method)
+    #   control     : neither                        (plain prompt tuning)
+    #   forget_only : entropy forget loss, no DDL
+    #   ddl_only    : DDL, no forget loss
+    # The last two isolate which term causes the open-vocabulary damage.
+    arm = getattr(cli, "arm", None)
+    if not arm:
+        arm = "control" if bool(getattr(cli, "control", False)) else "adu"
+    assert arm in ("adu", "control", "forget_only", "ddl_only"), f"bad arm {arm}"
+    use_forget = arm in ("adu", "forget_only")
+    use_ddl = arm in ("adu", "ddl_only")
+    control = not use_forget and not use_ddl  # kept for readability below
     return SimpleNamespace(
         # paths / core
         root=cli.root,
@@ -107,8 +119,8 @@ def build_args(cli):
         # forgetting (ADU baseline path)
         forget_domains=[cli.forget],
         forget_classes=[],
-        # ADU: L_forget = CE-to-uniform = entropy max.  control: no forget term.
-        forget_loss_type=("none" if control else "entropy"),
+        # ADU: L_forget = CE-to-uniform = entropy max.  else: no forget term.
+        forget_loss_type=("entropy" if use_forget else "none"),
         no_retain_loss=False,
         forget_weight=1.0,
         flat_weight=1.0,
@@ -120,8 +132,8 @@ def build_args(cli):
         # DDL (paper: gamma=30, lambda=10) + domain classifier.
         # control: weights zeroed -> domain_cls_loss == 0 exactly, while the
         # classifier head is still constructed so the architecture matches.
-        domainloss_weight=(0.0 if control else DOMAINLOSS_WEIGHT),
-        mmd_weight=(0.0 if control else MMD_WEIGHT),
+        domainloss_weight=(DOMAINLOSS_WEIGHT if use_ddl else 0.0),
+        mmd_weight=(MMD_WEIGHT if use_ddl else 0.0),
         use_domain_cls_loss=True,
         is_domain_divided=True,
         domain_class_divided=False,
@@ -251,9 +263,13 @@ def main():
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--heldout_num", type=int, default=26)
     p.add_argument("--heldout_seed", type=int, default=1234)
+    p.add_argument("--arm", type=str, default=None,
+                   choices=["adu", "control", "forget_only", "ddl_only"],
+                   help="which objective to train: adu = forget loss + DDL; "
+                        "control = neither; forget_only / ddl_only isolate one term. "
+                        "Use a distinct --output-dir per arm.")
     p.add_argument("--control", action="store_true",
-                   help="CONTROL ARM: prompt tuning WITHOUT unlearning "
-                        "(no forget loss, no DDL). Use a different --output-dir.")
+                   help="alias for --arm control (kept for backwards compatibility)")
     p.add_argument("--root", type=str, default=DATA_ROOT,
                    help="dataset root containing DomainNet/splits_mini/ "
                         f"(default: {DATA_ROOT})")
@@ -273,8 +289,12 @@ def main():
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
 
-    arm = "CONTROL (prompt tuning, NO unlearning)" if cli.control else "ADU (full unlearning)"
-    print(f"[phase0] ARM: {arm}")
+    arm_name = cli.arm or ("control" if cli.control else "adu")
+    desc = {"adu": "ADU (forget loss + DDL)",
+            "control": "CONTROL (prompt tuning only, NO unlearning)",
+            "forget_only": "FORGET-ONLY (entropy loss, DDL off)",
+            "ddl_only": "DDL-ONLY (DDL on, no forget loss)"}[arm_name]
+    print(f"[phase0] ARM: {desc}")
     print(f"[phase0] forget={cli.forget} seed={cli.seed} "
           f"heldout_num={cli.heldout_num} heldout_seed={cli.heldout_seed}")
     print(f"[phase0] forget_loss={args.forget_loss_type} "

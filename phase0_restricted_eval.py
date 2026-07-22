@@ -58,8 +58,11 @@ def find_checkpoint(output_dir):
     cands = glob.glob(osp.join(output_dir, "*", "model.pth.tar-*"))
     if not cands:
         raise FileNotFoundError(
-            f"no checkpoint under {output_dir} (looked for */model.pth.tar-*). "
-            "Re-run phase0_diagnostic.py, or point --output-dir at the right run."
+            f"no checkpoint under {output_dir} (looked for */model.pth.tar-*).\n"
+            "  The checkpoint is written ONLY at the final epoch, so the most\n"
+            "  likely cause is that phase0_diagnostic.py is still training --\n"
+            "  wait for it to finish, then re-run this.\n"
+            "  Otherwise: check --output-dir points at the right run."
         )
     best_ep, best_dir = -1, None
     for c in cands:
@@ -117,9 +120,12 @@ def main():
     p.add_argument("--heldout_num", type=int, default=26)
     p.add_argument("--heldout_seed", type=int, default=1234)
     p.add_argument("--root", type=str, default=DATA_ROOT)
+    p.add_argument("--arm", type=str, default=None,
+                   choices=["adu", "control", "forget_only", "ddl_only"],
+                   help="the arm this checkpoint was trained with, so the cfg "
+                        "used to rebuild the model matches")
     p.add_argument("--control", action="store_true",
-                   help="set when evaluating a --control checkpoint, so the cfg "
-                        "used to rebuild the model matches how it was trained")
+                   help="alias for --arm control (backwards compatibility)")
     p.add_argument("--n_draws", type=int, default=20,
                    help="random 26-subsets of SEEN classes to average over")
     p.add_argument("--output-dir", type=str, required=True,

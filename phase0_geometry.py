@@ -102,10 +102,10 @@ def mean_margin(feats, labels, txt):
 # feature extraction
 # ----------------------------------------------------------------------------
 @torch.no_grad()
-def features_from_checkpoint(ckpt_dir, forget, control, cli):
+def features_from_checkpoint(ckpt_dir, forget, arm, cli):
     c = SimpleNamespace(output_dir=ckpt_dir, seed=cli.seed, forget=forget,
                         heldout_num=cli.heldout_num, heldout_seed=cli.heldout_seed,
-                        gpu=cli.gpu, root=cli.root, control=control)
+                        gpu=cli.gpu, root=cli.root, arm=arm, control=False)
     cfg = setup_cfg(build_args(c))
     trainer = build_trainer(cfg)
     d, ep = find_checkpoint(ckpt_dir)
@@ -129,7 +129,7 @@ def features_from_checkpoint(ckpt_dir, forget, control, cli):
 def features_zeroshot(forget, cli):
     c = SimpleNamespace(output_dir="/tmp/geo_zs", seed=cli.seed, forget=forget,
                         heldout_num=cli.heldout_num, heldout_seed=cli.heldout_seed,
-                        gpu=cli.gpu, root=cli.root, control=False)
+                        gpu=cli.gpu, root=cli.root, arm="adu", control=False)
     cfg = setup_cfg(build_args(c))
     dm = DataManager(cfg)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -174,7 +174,8 @@ def analyse(name, feats, labels, domains, txt, heldout, forget):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--run", action="append", default=[],
-                   help='"label=/path/to/run=forgetdomain[:control]"')
+                   help='"label=/path/to/run=forgetdomain[:arm]" where arm is one of '
+                        'adu (default), control, forget_only, ddl_only')
     p.add_argument("--zeroshot", action="append", default=[],
                    help="forget domain to build a zero-shot reference for")
     p.add_argument("--gpu", type=str, default="0")
@@ -191,10 +192,11 @@ def main():
         rows += analyse(f"zeroshot({fd})", *features_zeroshot(fd, cli), fd)
     for spec in cli.run:
         label, path, dom = spec.split("=", 2)
-        control = dom.endswith(":control")
-        dom = dom.replace(":control", "")
+        arm = "adu"
+        if ":" in dom:
+            dom, arm = dom.split(":", 1)
         rows += analyse(label, *features_from_checkpoint(
-            osp.expanduser(path), dom, control, cli), dom)
+            osp.expanduser(path), dom, arm, cli), dom)
 
     hdr = f"{'arm':<16}{'domains':<9}{'classes':<10}{'n':>5}" \
           f"{'erank':>9}{'PR':>8}{'E_cls':>9}{'margin':>9}"
