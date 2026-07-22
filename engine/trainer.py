@@ -253,10 +253,11 @@ class SimpleTrainer_(TrainerBase):
                     model_name="model-best.pth.tar"
                 )
 
-        if meet_checkpoint_freq or last_epoch:
-            self.save_model(self.epoch, self.output_dir)
-
-        # Early stopping logic
+        # Early stopping decision must come BEFORE the checkpoint write: an
+        # early-stopped run never reaches last_epoch, so with the original order
+        # it trained fully, evaluated, and then exited having saved nothing.
+        # (Observed with NegGrad, whose unbounded loss oscillates enough to trip
+        #  the plateau detector -- 3 of 9 concepts produced no checkpoint.)
         if hasattr(self, 'train_loss'):
             if not hasattr(self, 'best_train_loss'):
                 self.best_train_loss = self.train_loss
@@ -271,6 +272,9 @@ class SimpleTrainer_(TrainerBase):
             patience = 15 # Increased patience for unlearning
             if self.patience_counter >= patience:
                 self.early_stop = True
+
+        if meet_checkpoint_freq or last_epoch or getattr(self, 'early_stop', False):
+            self.save_model(self.epoch, self.output_dir)
 
     @torch.no_grad()
     def test(self, split=None):
