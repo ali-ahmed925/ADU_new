@@ -100,4 +100,21 @@ chk("no svd in forward()", "svd" not in fwd)
 chk("basis installed in build_model, not per step",
     "set_class_subspace_basis" in src.split("def build_model")[1].split("name_to_update")[0])
 
+print("\n=== trainer registry intact ===")
+# Regression guard: inserting a module-level def directly beneath
+# @TRAINER_REGISTRY.register() silently registers the FUNCTION instead of the
+# trainer class, and build_trainer then fails with "expected to belong to [...]".
+from dassl.engine import TRAINER_REGISTRY
+names = TRAINER_REGISTRY.registered_names()
+chk("IVLP_VL_Adapter_Prompt is registered", "IVLP_VL_Adapter_Prompt" in names)
+chk("compute_frozen_class_subspace NOT registered",
+    "compute_frozen_class_subspace" not in names)
+obj = TRAINER_REGISTRY.get("IVLP_VL_Adapter_Prompt")
+chk("registry resolves to a class, not a function", isinstance(obj, type))
+chk("decorator sits directly on the class",
+    any(b.__name__ == "TrainerDF" for b in obj.__mro__))
+chk("helper still importable as a plain function",
+    callable(T.compute_frozen_class_subspace)
+    and not isinstance(T.compute_frozen_class_subspace, type))
+
 print("\n" + ("TIER1 CHECK FAILED: " + ", ".join(FAIL) if FAIL else "ALL TIER 1 CHECKS PASSED"))

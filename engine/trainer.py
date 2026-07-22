@@ -380,6 +380,11 @@ class TrainerDF(SimpleTrainer_):
         self.is_domain_divided = True
         self.domain_class_divided = False
         self.ddl_loss_weight = cfg.DDL_LOSS_WEIGHT
+        # Bounded domain CE: stop pushing once domain separation is good enough.
+        # Logs show CE runs 1.386 -> 0.036 (~99% separation) although ADU reports
+        # needing only ~79%; that last stretch is what concentrates variance onto
+        # the domain-separating directions. 0 disables (original behaviour).
+        self.ddl_ce_floor = getattr(cfg, "DDL_CE_FLOOR", 0.0)
 
         self.csv_file_path = cfg.CSV_FILE_PATH
         if not osp.exists(self.csv_file_path):
@@ -678,7 +683,14 @@ class TrainerDF(SimpleTrainer_):
         if domain_output is not None:
             target_label = domain
             mmd_loss = total_pairwise_mmd(domain_output.float(), target_label.float()) * self.cfg.MMD_WEIGHT
-            ddl = F.cross_entropy(domain_output, target_label) * self.ddl_loss_weight
+            ddl_ce_raw = F.cross_entropy(domain_output, target_label)
+            if self.ddl_ce_floor > 0:
+                # hinge: zero gradient once domain CE is already below the floor
+                ddl_ce = torch.clamp(ddl_ce_raw - self.ddl_ce_floor, min=0.0)
+            else:
+                ddl_ce = ddl_ce_raw
+            self._ddl_ce_raw = float(ddl_ce_raw)
+            ddl = ddl_ce * self.ddl_loss_weight
             domain_cls_loss = ddl - mmd_loss
             loss += domain_cls_loss
         else:
@@ -692,6 +704,8 @@ class TrainerDF(SimpleTrainer_):
             "loss_prv": loss_prv.item() if isinstance(loss_prv, torch.Tensor) else loss_prv,
             "loss_del": loss_del.item() if isinstance(loss_del, torch.Tensor) else loss_del,
             "loss_domain_cls": domain_cls_loss.item() ,
+            # raw (unhinged) domain CE, so the logs show whether the floor binds
+            "ddl_ce": getattr(self, "_ddl_ce_raw", 0.0),
         }
         acc = compute_acc_for_df(output, label, prv_domain_mask, del_domain_mask, domain, self.domain_list, device=self.device)
         loss_summary.update(acc)

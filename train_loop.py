@@ -118,6 +118,8 @@ def extend_cfg(cfg, args):
     # Subspace-constrained DDL: feed the domain classifier the component of the
     # image feature orthogonal to the frozen zero-shot class subspace.
     cfg.SUBSPACE_DDL = getattr(args, "subspace_ddl", False)
+    # Bounded domain CE: hinge the DDL cross-entropy at this floor (0 = off).
+    cfg.DDL_CE_FLOOR = getattr(args, "ddl_ce_floor", 0.0)
 
     # Config for independent Vision Language prompting (independent-vlp)
     cfg.TRAINER.IVLP = CN()
@@ -293,6 +295,9 @@ if __name__ == "__main__":
              "of the image feature orthogonal to the frozen zero-shot class "
              "subspace, so domain separation cannot consume the directions the "
              "zero-shot classifier reads.")
+    parser.add_argument( "--ddl_ce_floor", type=float, default=0.0,
+        help="Bounded domain CE: hinge the DDL cross-entropy at this floor, so it "
+             "stops pushing once domain separation is good enough (0 = off).")
     parser.add_argument( "--heldout_num", type=int, default=0,
         help="Phase-0 diagnostic: number of classes to hold out of TRAINING only "
              "(test keeps all classes/text anchors). 0 = stock ADU.")

@@ -100,6 +100,15 @@ def build_args(cli):
     use_forget = arm in ("adu", "forget_only")
     use_ddl = arm in ("adu", "ddl_only")
     control = not use_forget and not use_ddl  # kept for readability below
+
+    # DDL weights: paper defaults unless explicitly overridden. gamma scales the
+    # domain cross-entropy, which the logs identify as the term that drives the
+    # representation collapse (it is still active at convergence, whereas MMD
+    # saturates at ~0.787 and stops producing gradient).
+    gamma = getattr(cli, "gamma", None)
+    lam = getattr(cli, "lam", None)
+    gamma = DOMAINLOSS_WEIGHT if gamma is None else float(gamma)
+    lam = MMD_WEIGHT if lam is None else float(lam)
     return SimpleNamespace(
         # paths / core
         root=cli.root,
@@ -132,11 +141,12 @@ def build_args(cli):
         # DDL (paper: gamma=30, lambda=10) + domain classifier.
         # control: weights zeroed -> domain_cls_loss == 0 exactly, while the
         # classifier head is still constructed so the architecture matches.
-        domainloss_weight=(DOMAINLOSS_WEIGHT if use_ddl else 0.0),
-        mmd_weight=(MMD_WEIGHT if use_ddl else 0.0),
+        domainloss_weight=(gamma if use_ddl else 0.0),
+        mmd_weight=(lam if use_ddl else 0.0),
         # Tier 1: constrain DDL to the orthogonal complement of the frozen
         # zero-shot class subspace. Orthogonal to the arm choice above.
         subspace_ddl=bool(getattr(cli, "subspace_ddl", False)),
+        ddl_ce_floor=float(getattr(cli, "ddl_ce_floor", 0.0) or 0.0),
         use_domain_cls_loss=True,
         is_domain_divided=True,
         domain_class_divided=False,
@@ -276,6 +286,16 @@ def main():
     p.add_argument("--subspace_ddl", action="store_true",
                    help="TIER 1: constrain DDL to the orthogonal complement of the "
                         "frozen zero-shot class subspace")
+    p.add_argument("--gamma", type=float, default=None,
+                   help=f"DDL cross-entropy weight (paper: {DOMAINLOSS_WEIGHT}). "
+                        "Ignored on arms where DDL is off.")
+    p.add_argument("--lam", type=float, default=None,
+                   help=f"DDL MMD weight (paper: {MMD_WEIGHT}). "
+                        "Ignored on arms where DDL is off.")
+    p.add_argument("--ddl_ce_floor", type=float, default=0.0,
+                   help="Bounded domain CE: hinge the DDL cross-entropy at this "
+                        "floor so it stops pushing once domains are separated "
+                        "enough (0 = off, original ADU).")
     p.add_argument("--root", type=str, default=DATA_ROOT,
                    help="dataset root containing DomainNet/splits_mini/ "
                         f"(default: {DATA_ROOT})")
@@ -305,7 +325,7 @@ def main():
           f"heldout_num={cli.heldout_num} heldout_seed={cli.heldout_seed}")
     print(f"[phase0] forget_loss={args.forget_loss_type} "
           f"gamma={args.domainloss_weight} lambda={args.mmd_weight} "
-          f"subspace_ddl={args.subspace_ddl}")
+          f"subspace_ddl={args.subspace_ddl} ddl_ce_floor={args.ddl_ce_floor}")
     print(f"[phase0] config: {TRAINER_CFG} (paper: bs=8, 50ep)")
 
     trainer = build_trainer(cfg)
