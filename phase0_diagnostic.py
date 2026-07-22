@@ -134,6 +134,9 @@ def build_args(cli):
         # classifier head is still constructed so the architecture matches.
         domainloss_weight=(DOMAINLOSS_WEIGHT if use_ddl else 0.0),
         mmd_weight=(MMD_WEIGHT if use_ddl else 0.0),
+        # Tier 1: constrain DDL to the orthogonal complement of the frozen
+        # zero-shot class subspace. Orthogonal to the arm choice above.
+        subspace_ddl=bool(getattr(cli, "subspace_ddl", False)),
         use_domain_cls_loss=True,
         is_domain_divided=True,
         domain_class_divided=False,
@@ -270,6 +273,9 @@ def main():
                         "Use a distinct --output-dir per arm.")
     p.add_argument("--control", action="store_true",
                    help="alias for --arm control (kept for backwards compatibility)")
+    p.add_argument("--subspace_ddl", action="store_true",
+                   help="TIER 1: constrain DDL to the orthogonal complement of the "
+                        "frozen zero-shot class subspace")
     p.add_argument("--root", type=str, default=DATA_ROOT,
                    help="dataset root containing DomainNet/splits_mini/ "
                         f"(default: {DATA_ROOT})")
@@ -298,7 +304,8 @@ def main():
     print(f"[phase0] forget={cli.forget} seed={cli.seed} "
           f"heldout_num={cli.heldout_num} heldout_seed={cli.heldout_seed}")
     print(f"[phase0] forget_loss={args.forget_loss_type} "
-          f"gamma={args.domainloss_weight} lambda={args.mmd_weight}")
+          f"gamma={args.domainloss_weight} lambda={args.mmd_weight} "
+          f"subspace_ddl={args.subspace_ddl}")
     print(f"[phase0] config: {TRAINER_CFG} (paper: bs=8, 50ep)")
 
     trainer = build_trainer(cfg)

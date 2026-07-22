@@ -114,7 +114,10 @@ def extend_cfg(cfg, args):
     cfg.INDEPENDENT_CROSS_ATTENTION = False
     cfg.INDEPENDENT_LEARNABLE_VISION = True
     cfg.INSERT_LAYER_ATTN = 9
-    cfg.DDL_LOSS_WEIGHT = args.domainloss_weight 
+    cfg.DDL_LOSS_WEIGHT = args.domainloss_weight
+    # Subspace-constrained DDL: feed the domain classifier the component of the
+    # image feature orthogonal to the frozen zero-shot class subspace.
+    cfg.SUBSPACE_DDL = getattr(args, "subspace_ddl", False)
 
     # Config for independent Vision Language prompting (independent-vlp)
     cfg.TRAINER.IVLP = CN()
@@ -285,6 +288,11 @@ if __name__ == "__main__":
     parser.add_argument( "--dataset_name", type=str, default="")
     parser.add_argument( "--domainloss_weight", type=float, default=0.0)
     parser.add_argument( "--mmd_weight", type=float, default=0.0)
+    parser.add_argument( "--subspace_ddl", action="store_true",
+        help="Subspace-constrained DDL: feed the domain classifier the component "
+             "of the image feature orthogonal to the frozen zero-shot class "
+             "subspace, so domain separation cannot consume the directions the "
+             "zero-shot classifier reads.")
     parser.add_argument( "--heldout_num", type=int, default=0,
         help="Phase-0 diagnostic: number of classes to hold out of TRAINING only "
              "(test keeps all classes/text anchors). 0 = stock ADU.")

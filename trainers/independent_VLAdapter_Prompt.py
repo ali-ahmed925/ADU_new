@@ -218,8 +218,23 @@ class CustomCLIP(nn.Module):
 
         self.domain_classifier.to(self.dtype)
         self.use_domain_cls_loss = cfg.USE_DOMAIN_CLASIFIER_LOSS
-        self.text_depth = cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT 
+        self.text_depth = cfg.TRAINER.IVLP.PROMPT_DEPTH_TEXT
         self.n_vision_context = cfg.TRAINER.IVLP.N_CTX_VISION
+
+        # Subspace-constrained DDL: feed the domain classifier the component of
+        # the image feature ORTHOGONAL to the frozen zero-shot class subspace,
+        # so domain separation cannot be achieved by consuming the directions the
+        # zero-shot classifier reads. Basis is installed once by build_model().
+        self.subspace_ddl = getattr(cfg, "SUBSPACE_DDL", False)
+        # Registered up-front as an (initially empty) NON-persistent buffer:
+        # registering it later would raise "attribute already exists", and
+        # non-persistent keeps it out of state_dict, so checkpoints stay
+        # compatible with runs trained before this flag existed.
+        self.register_buffer("cls_basis", None, persistent=False)
+
+    def set_class_subspace_basis(self, basis):
+        """Install the orthonormal basis (r, d) of span(frozen text anchors)."""
+        self.cls_basis = basis.to(self.dtype)
 
     def forward(self, image, label=None):
         # tokenized_prompts = self.tokenized_prompts
@@ -244,7 +259,15 @@ class CustomCLIP(nn.Module):
         logits_patch = logit_scale * torch.matmul(image_patch_features, text_features.t())
 
         if self.use_domain_cls_loss:
-            domain_logit = self.domain_classifier(image_features)
+            domain_input = image_features
+            if self.subspace_ddl and self.cls_basis is not None:
+                # z_perp = z - (z @ B^T) B, with B (r,d) orthonormal rows.
+                # Stays d-dimensional (projection, not reduction), so the
+                # nn.Linear(d, n_domains) head is unchanged. B is a non-trainable
+                # buffer, so gradients flow to image_features only.
+                b = self.cls_basis
+                domain_input = image_features - (image_features @ b.t()) @ b
+            domain_logit = self.domain_classifier(domain_input)
             return logits, image_features, text_features, domain_logit, logits_patch
 
         return logits, image_features, text_features, logits_patch
@@ -265,8 +288,42 @@ class Adapter(nn.Module):
         return x.type(self.dtype)
 
 @TRAINER_REGISTRY.register()
+def compute_frozen_class_subspace(cfg, classnames):
+    """Orthonormal basis of span(frozen zero-shot text anchors). Computed ONCE.
+
+    Uses a *vanilla* CLIP (prompt depths zeroed, InstaPG off) so the anchors are
+    the untuned "a photo of a [class]." embeddings -- the geometry the zero-shot
+    open-vocabulary classifier reads, which is what we want to protect. The
+    prompted text encoder would instead give tuned anchors.
+
+    Matches phase0_subspace_check.projector exactly (same normalisation, same SVD,
+    same singular-value threshold), so the basis used at training time is the one
+    the gating diagnostic validated.
+    """
+    cfg2 = cfg.clone()
+    cfg2.defrost()
+    cfg2.TRAINER.IVLP.PROMPT_DEPTH_VISION = 0
+    cfg2.TRAINER.IVLP.PROMPT_DEPTH_TEXT = 0
+    cfg2.USE_CROSSATTENTION = False
+    cfg2.INDEPENDENT_CROSS_ATTENTION = False
+    cfg2.freeze()
+
+    vanilla = load_clip_to_cpu(cfg2).float().eval()
+    names = [n.replace("_", " ") for n in classnames]
+    toks = torch.cat([clip.tokenize(f"a photo of a {n}.") for n in names])
+    with torch.no_grad():
+        w = vanilla.encode_text(toks).float()
+    del vanilla
+    w = w / w.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+    _, s, vh = torch.linalg.svd(w, full_matrices=False)
+    basis = vh[s > 1e-6].contiguous()
+    print(f"[SUBSPACE-DDL] class subspace: rank {basis.shape[0]} of {w.shape[1]} dims "
+          f"(from {w.shape[0]} frozen zero-shot anchors)")
+    return basis
+
+
 class IVLP_VL_Adapter_Prompt(TrainerDF):
-        
+
     def check_cfg(self, cfg):
         assert cfg.TRAINER.IVLP.PREC in ["fp16", "fp32", "amp"]
 
@@ -283,6 +340,12 @@ class IVLP_VL_Adapter_Prompt(TrainerDF):
 
         print("Building custom CLIP")
         self.model = CustomCLIP(cfg, classnames, clip_model)
+
+        # Subspace-constrained DDL: install the frozen class-subspace basis once,
+        # here, so the SVD is never recomputed during training.
+        if getattr(cfg, "SUBSPACE_DDL", False):
+            self.model.set_class_subspace_basis(
+                compute_frozen_class_subspace(cfg, classnames))
 
         name_to_update = "prompt_learner"
 
